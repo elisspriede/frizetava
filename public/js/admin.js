@@ -703,7 +703,7 @@
         <label class="field"><span>Tavs mobilais (paziņojumiem tev)</span><input class="input" name="ownerPhone" type="tel" value="${esc(c.ownerPhone || '')}" placeholder="+371 2…"></label>
         <div class="full prov prov-sendberry" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
           ${secret('sendberryKey', cs.sendberryKey, 'Sendberry API key', '')}${secret('sendberryName', cs.sendberryName, 'Sendberry API name', '')}${secret('sendberryPassword', cs.sendberryPassword, 'Sendberry API password', '')}
-          <p class="tiny muted" style="grid-column:1/-1">Sendberry portālā: API sadaļā izveido atslēgu — tur būs key, name un password. Sūtītāja vārdam „LDStudio” var būt vajadzīgs Sendberry apstiprinājums.</p></div>
+          <p class="tiny muted" style="grid-column:1/-1">Sendberry portālā: API sadaļā izveido atslēgu — tur būs key, name un password. Sūtītāja vārdu (piem., „LDStudio”) vispirms jāreģistrē un jāapstiprina Sendberry portālā; kamēr tas nav apstiprināts, atstāj lauku „Sūtītāja vārds” tukšu.</p></div>
         <div class="full prov prov-twilio" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
           ${secret('twilioSid', cs.twilioSid, 'Twilio Account SID', 'AC…')}${secret('twilioToken', cs.twilioToken, 'Twilio Auth Token', '')}</div>
         <div class="full prov prov-smsapi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
