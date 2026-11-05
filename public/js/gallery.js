@@ -4,7 +4,8 @@
 // Pirms/pēc salīdzinājums. Slīdnis ir īsts <input type=range> — strādā ar peli, pirkstu un tastatūru.
 function compareHTML(it, big = false) {
   const before = big ? it.beforeFull : it.beforeThumb, after = big ? it.full : it.thumb;
-  return `<div class="compare" style="--pos:50%">
+  const ar = big && it.w && it.h ? `;--ar:${+it.w}/${+it.h}` : '';
+  return `<div class="compare" style="--p:50${ar}">
     <img class="after" src="${esc(after)}" alt="Pēc${it.caption ? ': ' + esc(it.caption) : ''}" ${big ? '' : 'loading="lazy"'} decoding="async">
     <img class="before" src="${esc(before)}" alt="Pirms" ${big ? '' : 'loading="lazy"'} decoding="async">
     <span class="tag l">Pirms</span><span class="tag r">Pēc</span>
@@ -14,7 +15,7 @@ function compareHTML(it, big = false) {
 function bindCompare(root) {
   $$('.compare input[type=range]', root).forEach(r => {
     const c = r.closest('.compare');
-    const set = () => c.style.setProperty('--pos', r.value + '%');
+    const set = () => c.style.setProperty('--p', r.value);
     r.addEventListener('input', set);
     r.addEventListener('click', e => e.stopPropagation());
     set();
@@ -77,7 +78,7 @@ function bindCompare(root) {
       <button class="lb-btn lb-close" aria-label="Aizvērt">${icon('x')}</button>
       ${shown.length > 1 ? `<button class="lb-btn lb-prev" aria-label="Iepriekšējais">${icon('chevL')}</button><button class="lb-btn lb-next" aria-label="Nākamais">${icon('chevR')}</button>` : ''}`;
     document.body.appendChild(lb);
-    document.body.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden'; document.body.classList.add('lb-open');
     $('.lb-close', lb).addEventListener('click', closeLightbox);
     if ($('.lb-prev', lb)) { $('.lb-prev', lb).addEventListener('click', () => step(-1)); $('.lb-next', lb).addEventListener('click', () => step(1)); }
     lb.addEventListener('click', e => { if (e.target === lb || e.target.classList.contains('lb-stage')) closeLightbox(); });
@@ -109,7 +110,7 @@ function bindCompare(root) {
     if (!lb) return;
     document.removeEventListener('keydown', onKey);
     lb.remove(); lb = null;
-    document.body.style.overflow = '';
+    document.body.style.overflow = ''; document.body.classList.remove('lb-open');
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
 

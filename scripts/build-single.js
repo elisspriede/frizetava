@@ -10,6 +10,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const modules = {
   './lib/util': read('lib/util.js'),
   './lib/store': read('lib/store.js').replace("require('./util')", "require('./lib/util')"),
+  './lib/sms': read('lib/sms.js').replace("require('./util')", "require('./lib/util')"),
   './server': read('server.js')
 };
 
@@ -18,7 +19,8 @@ const pub = {};
   for (const f of fs.readdirSync(path.join(ROOT, 'public', dir))) {
     const rel = dir ? `${dir}/${f}` : f;
     if (fs.statSync(path.join(ROOT, 'public', rel)).isDirectory()) walk(rel);
-    else pub[rel] = read(`public/${rel}`);
+    else if (/\.(html|css|js|json|svg|txt|webmanifest)$/i.test(rel)) pub[rel] = read(`public/${rel}`);
+    else pub[rel] = { b64: fs.readFileSync(path.join(ROOT, 'public', rel)).toString('base64') }; // attēli u.c. binārie faili
   }
 })('');
 

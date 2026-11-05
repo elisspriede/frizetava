@@ -819,7 +819,9 @@ function settingsView() {
 }
 route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: settingsView(), admin: publicUser(user) }));
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
-  const s = db.settings, b = body || {};
+  // izmaiņas uz kopijas — ja kāda pārbaude neiziet, nekas netiek mainīts
+  const s = { ...db.settings }, b = body || {};
+  let oldPhoto = null;
   for (const k of ['salonName', 'tagline', 'address', 'phone', 'email', 'instagram']) if (b[k] !== undefined) s[k] = clean(b[k], 200);
   if (b.facebook !== undefined) {
     let fb = clean(b.facebook, 200);
@@ -843,7 +845,7 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     const v = clean(b.aboutPhoto, 200);
     if (v === '' || v === DEFAULT_ABOUT_PHOTO) s.aboutPhoto = v;
     else s.aboutPhoto = checkUploadUrl(v, 'Foto');
-    if (prev !== s.aboutPhoto) setImmediate(() => removeUploadsIfUnused([prev]));
+    if (prev !== s.aboutPhoto) oldPhoto = prev;
   }
   if (b.slotStep !== undefined) s.slotStep = [5, 10, 15, 20, 30, 60].includes(+b.slotStep) ? +b.slotStep : 15;
   if (b.minAdvanceHours !== undefined) s.minAdvanceHours = num(b.minAdvanceHours, 0, 168, 2);
@@ -877,7 +879,9 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     }
     s.sms = next;
   }
+  db.settings = s;
   save();
+  if (oldPhoto) setImmediate(() => removeUploadsIfUnused([oldPhoto])); // vecais foto tiek dzēsts tikai pēc veiksmīgas saglabāšanas
   return { settings: settingsView() };
 });
 
@@ -1062,7 +1066,8 @@ function serveStatic(req, res, pathname) {
     }
     const ext = path.extname(rel).toLowerCase();
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300' });
-    return res.end(req.method === 'HEAD' ? undefined : content);
+    const bodyOut = typeof content === 'object' && content.b64 ? Buffer.from(content.b64, 'base64') : content;
+    return res.end(req.method === 'HEAD' ? undefined : bodyOut);
   }
   const file = path.normalize(path.join(PUBLIC, rel));
   if (!file.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end(); }

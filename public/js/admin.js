@@ -2,7 +2,7 @@
 (async () => {
   const SECTIONS = [
     ['parskats', 'Pārskats', 'grid', 'Sākums'],
-    ['kalendars', 'Kalendārs', 'calendar', 'Kalendārs'],
+    ['kalendars', 'Kalendārs', 'calendar', 'Kalend.'],
     ['pieraksti', 'Pieraksti', 'list', 'Saraksts'],
     ['klienti', 'Klienti', 'users', 'Klienti'],
     ['pakalpojumi', 'Pakalpojumi', 'tag', 'Cenas'],
@@ -634,7 +634,7 @@
               <div style="display:grid;gap:8px">
                 <label class="btn btn-sm btn-line" style="position:relative;overflow:hidden">${icon('upload')}Mainīt foto<input type="file" accept="image/*" id="aboutPhotoIn" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>
                 ${s.aboutPhoto !== '/img/lasma.jpg' ? '<button type="button" class="btn btn-sm btn-ghost" id="aboutPhotoReset">Atjaunot sākotnējo</button>' : ''}
-                ${s.aboutPhoto ? '<button type="button" class="btn btn-sm btn-ghost" id="aboutPhotoHide">Nerādīt foto</button>' : ''}
+                ${s.aboutPhoto ? '<button type="button" class="btn btn-sm btn-ghost" id="aboutPhotoHide">Noņemt foto</button>' : ''}
               </div></div></div>
           <label class="field"><span>Vārds („Es esmu …”)</span><input class="input" name="ownerName" maxlength="60" value="${esc(s.ownerName || '')}"></label>
           <label class="field"><span>Apakšvirsraksts</span><input class="input" name="ownerTitle" maxlength="60" value="${esc(s.ownerTitle || '')}" placeholder="Tava friziere"></label>
@@ -670,8 +670,14 @@
       <section class="glass card span-12" id="smsCard"></section></div>`;
     renderSmsCard();
     const setAboutPhoto = async url => {
-      try { settings = (await API.put('/api/admin/settings', { aboutPhoto: url })).settings; toast('Foto atjaunināts.'); renderSettings(); }
-      catch (x) { toast(x.message, 'error'); }
+      // nesaglabātās izmaiņas formās saglabājas arī pēc foto maiņas
+      const keep = $$('form[id]', view).map(f => [f.id, $$('[name]', f).filter(el => el.type !== 'file' && el.type !== 'password').map(el => [el.name, el.type === 'checkbox' ? el.checked : el.value])]);
+      try {
+        settings = (await API.put('/api/admin/settings', { aboutPhoto: url })).settings;
+        await renderSettings();
+        for (const [id, vals] of keep) { const f = document.getElementById(id); if (!f) continue; for (const [n, v] of vals) { const el = f.elements[n]; if (el) el.type === 'checkbox' ? (el.checked = v) : (el.value = v); } }
+        toast(url ? 'Foto atjaunināts.' : 'Foto noņemts.');
+      } catch (x) { toast(x.message, 'error'); }
     };
     $('#aboutPhotoIn').addEventListener('change', async e => {
       const f = e.target.files[0]; if (!f) return;
@@ -680,7 +686,11 @@
       catch (x) { toast(x.message, 'error'); lbl.style.opacity = 1; }
     });
     if ($('#aboutPhotoReset')) $('#aboutPhotoReset').addEventListener('click', () => setAboutPhoto('/img/lasma.jpg'));
-    if ($('#aboutPhotoHide')) $('#aboutPhotoHide').addEventListener('click', () => setAboutPhoto(''));
+    if ($('#aboutPhotoHide')) $('#aboutPhotoHide').addEventListener('click', async () => {
+      const custom = /^\/uploads\//.test(settings.aboutPhoto || '');
+      if (!await confirmDialog(custom ? 'Foto vairs netiks rādīts sadaļā „Par mani”, un augšupielādētais attēls tiks izdzēsts. Sākotnējo foto vienmēr var atjaunot.' : 'Foto vairs netiks rādīts sadaļā „Par mani”. To vienmēr var atjaunot ar pogu „Atjaunot sākotnējo”.', { title: 'Noņemt foto?', ok: 'Noņemt' })) return;
+      setAboutPhoto('');
+    });
     $('#infoForm').addEventListener('submit', async e => {
       e.preventDefault();
       await withBusy(e.submitter, async () => {
@@ -737,6 +747,7 @@
   async function renderGallery() {
     let items = [];
     try { items = (await API.get('/api/admin/gallery')).items; } catch (e) { return toast(e.message, 'error'); }
+    if (location.hash !== '#galerija') return; // lietotājs pa to laiku atvēra citu sadaļu
     const cats = [...new Set([...items.map(i => i.category).filter(Boolean), ...services.map(s => s.name)])];
     const drop = (id, label) => `<label class="drop" id="${id}"><span class="lbl chip">${label}</span>${icon('upload')}<span><b>Izvēlies bildi</b><br><span class="small muted">vai ievelc to šeit</span></span><input type="file" accept="image/*"></label>`;
     view.innerHTML = pageHead('Mani darbi', 'Galerija', `<a class="btn btn-line" href="/galerija" target="_blank" rel="noopener">${icon('eye')}Skatīt galeriju</a>`) + `
@@ -801,8 +812,9 @@
             payload = { type: 'single', full: a.full, thumb: a.thumb, w: a.w, h: a.h };
           }
           await API.post('/api/admin/gallery', { ...payload, caption: v.caption, category: v.category, visible: v.visible });
+          for (const k of Object.keys(files)) delete files[k]; // otrs klikšķis vairs neko neaugšupielādē
           toast('Darbs pievienots galerijai.');
-          renderGallery();
+          await renderGallery();
         } catch (x) { toast(x.message, 'error'); }
       });
     });

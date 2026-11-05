@@ -17,7 +17,7 @@
     $('#aboutQuote').textContent = s.aboutQuote || '';
     $('#aboutQuote').classList.toggle('hidden', !s.aboutQuote);
     const photo = $('#aboutPhoto');
-    if (!s.aboutPhoto) photo.closest('figure').classList.add('hidden');
+    if (!s.aboutPhoto) { photo.closest('figure').classList.add('hidden'); photo.closest('.about-grid').classList.add('no-photo'); }
     else if (s.aboutPhoto !== '/img/lasma.jpg') { photo.removeAttribute('srcset'); photo.src = s.aboutPhoto; }
     // Mani darbi (tikai ja galerijā ir bildes)
     if (s.hasGallery) {

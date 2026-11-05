@@ -638,22 +638,29 @@ body.has-wa { padding-bottom: 84px; }
 .g-card figcaption span { font-size: 12.5px; color: var(--muted); }
 
 /* pirms / pēc salīdzinājums */
-.compare { position: relative; width: 100%; height: 100%; overflow: hidden; --pos: 50%; touch-action: pan-y; user-select: none; }
+.compare { position: relative; width: 100%; height: 100%; overflow: hidden; --p: 50; touch-action: pan-y; user-select: none;
+  /* rokturis sakrīt ar slīdņa „īkšķi” (44px), tāpēc pozīcija rēķināta tāpat kā pārlūkā */
+  --pos: calc(22px + (100% - 44px) * var(--p) / 100); }
 .compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
 .compare .before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
 .compare .line { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 12px rgba(0, 0, 0, .35); pointer-events: none; }
 .compare .knob { position: absolute; top: 50%; left: var(--pos); width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: var(--shadow); display: grid; place-items: center; pointer-events: none; color: var(--primary); }
 .compare .knob svg { width: 22px; height: 22px; }
-.compare input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; -webkit-appearance: none; appearance: none; }
+.compare input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; -webkit-appearance: none; appearance: none; background: transparent;
+  pointer-events: none; /* lapu var ritināt pāri bildei — slīdni pārvieto tikai rokturis */ }
+.compare input[type=range]::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+.compare input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 44px; height: 100%; cursor: ew-resize; background: transparent; border: 0; }
+.compare input[type=range]::-moz-range-track { height: 100%; background: transparent; }
+.compare input[type=range]::-moz-range-thumb { pointer-events: auto; width: 44px; height: 100%; cursor: ew-resize; background: transparent; border: 0; border-radius: 0; }
 .compare input[type=range]:focus-visible ~ .knob { outline: 3px solid var(--accent); outline-offset: 2px; }
 .compare .tag { position: absolute; top: 12px; font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: rgba(31, 39, 32, .62); color: #fff; letter-spacing: .04em; pointer-events: none; }
 .compare .tag.l { left: 12px; } .compare .tag.r { right: 12px; }
 
 /* pilnekrāna skats */
 .lightbox { position: fixed; inset: 0; z-index: 950; background: rgba(20, 25, 20, .9); display: grid; grid-template-rows: 1fr auto; padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); animation: fade .2s; }
-.lightbox .lb-stage { position: relative; display: grid; place-items: center; min-height: 0; }
+.lightbox .lb-stage { position: relative; display: grid; place-items: center; min-height: 0; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
 .lightbox .lb-stage > img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 14px; }
-.lightbox .lb-stage .compare { width: min(100%, calc((100vh - 140px) * .8)); height: auto; aspect-ratio: 4 / 5; max-height: calc(100vh - 140px); border-radius: 14px; }
+.lightbox .lb-stage .compare { --ar: 4 / 5; aspect-ratio: var(--ar); width: min(100%, calc((100vh - 140px) * (var(--ar)))); height: auto; max-height: calc(100vh - 140px); border-radius: 14px; }
 .lightbox .lb-cap { color: #f3efe4; text-align: center; padding-top: 12px; font-size: 14.5px; }
 .lightbox .lb-cap span { opacity: .65; margin-left: 8px; }
 .lightbox .lb-btn { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: #fff; cursor: pointer; display: grid; place-items: center; }
@@ -698,3 +705,13 @@ body.has-wa { padding-bottom: 84px; }
 
 /* sadaļu enkuri neslīd zem lipīgās augšējās joslas */
 main section[id] { scroll-margin-top: 96px; }
+
+/* pārbaudes labojumi */
+.about-grid.no-photo { grid-template-columns: 1fr; }
+.about-grid.no-photo .about-text { max-width: 760px; }
+@media (max-width: 960px) { .mobile-nav a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+@media (max-width: 720px) {
+  .lightbox .lb-prev, .lightbox .lb-next { top: auto; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); margin-top: 0; }
+  .lightbox .lb-cap { padding: 12px 56px 0; min-height: 48px; }
+}
+body.lb-open .wa-fab { display: none; }
