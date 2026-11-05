@@ -117,7 +117,8 @@ function publicInfo() {
 const sms = SMS.createSms({ getDb: () => db, save: () => save() });
 const SMS_DAYS = ['svētd.', 'pirmd.', 'otrd.', 'trešd.', 'ceturtd.', 'piektd.', 'sestd.'];
 const smsWhen = (date, start) => { const d = U.parseDate(date); return `${SMS_DAYS[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. plkst. ${start}`; };
-const cut = (v, n) => { const t = String(v || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const cut = (v, n) => { const t = String(v || '').replace(/[\r\n\t\u2028\u2029]+/g, ' ').replace(/\s{2,}/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const smsPhone = p => SMS.toE164(p) || cut(String(p || '').replace(/[^\d+ ]/g, ''), 20);
 const bookingClient = b => {
   const u = b.userId ? getUser(b.userId) : null;
   return { name: u ? u.name : (b.guestName || 'Klients'), phone: u ? u.phone : (b.guestPhone || '') };
@@ -130,21 +131,29 @@ const SMS_TEXT = {
     const t = U.today(), rel = b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
     return `${S.salonName}: atgādinām par vizīti ${rel} plkst. ${b.start} — ${cut(b.serviceName, 40)}.${S.address ? ' ' + cut(S.address, 40) + '.' : ''} Ja nevarat ierasties, zvaniet ${S.phone}`;
   },
-  ownerNew: (S, b, c) => `Jauns pieraksts: ${cut(c.name, 30)}, ${c.phone} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}${b.createdBy === 'guest' ? ' (bez konta)' : ''}${b.note ? '. Kom.: ' + cut(b.note, 60) : ''}`,
+  ownerNew: (S, b, c) => `Jauns pieraksts: ${cut(c.name, 30)}, ${smsPhone(c.phone)} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}${b.createdBy === 'guest' ? ' (bez konta)' : ''}${b.note ? '. Kom.: ' + cut(b.note, 60) : ''}`,
   ownerChange: (S, b, c, old) => `Pārcelts: ${cut(c.name, 30)} — ${cut(b.serviceName, 35)}, no ${smsWhen(old.date, old.start)} uz ${smsWhen(b.date, b.start)}`,
-  ownerCancel: (S, b, c) => `Atcelts: ${cut(c.name, 30)}, ${c.phone} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}`
+  ownerCancel: (S, b, c) => `Atcelts: ${cut(c.name, 30)}, ${smsPhone(c.phone)} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}`
 };
 // by: 'guest' | 'client' | 'admin'. Klientu darbības paziņo salonam; klientam — apstiprinājumi (arī par admina izmaiņām, ja ieslēgts).
 function notifyBooking(event, b, by, old) {
   try {
     if (!sms.enabled()) return;
     const c = sms.cfg(), S = db.settings, cl = bookingClient(b);
-    const toClient = by !== 'admin' || c.client.onAdminChanges;
+    // admina darbības ar jau pagājušu vizīti (vēsturiski ieraksti, labojumi) klientam neziņo
+    const upcoming = U.ts(b.date, U.toMin(b.start)) > Date.now();
+    const toClient = by !== 'admin' || (c.client.onAdminChanges && upcoming);
+    // klienta/viesa darbību izraisītām SMS — limits uz vienu klientu (pret atkārtotu pārcelšanu/atcelšanu)
+    if (by !== 'admin') {
+      const k = 'sms:' + (b.userId || SMS.toE164(cl.phone) || cl.phone);
+      if (!hit(k, 6, 3600e3) || !hit(k + ':day', 15, 24 * 3600e3)) { console.warn('SMS limits klientam sasniegts:', b.id); return; }
+    }
+    const markClientSms = () => { const real = db.bookings.find(x => x.id === b.id); if (real) { real.lastClientSmsAt = new Date().toISOString(); save(); } };
     if (event === 'new') {
-      if (c.client.confirm && toClient) sms.enqueue(cl.phone, SMS_TEXT.confirm(S, b), 'confirm', b.id);
+      if (c.client.confirm && toClient && sms.enqueue(cl.phone, SMS_TEXT.confirm(S, b), 'confirm', b.id)) markClientSms();
       if (c.owner.onNew && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerNew(S, b, cl), 'owner-new', b.id);
     } else if (event === 'change') {
-      if (c.client.change && toClient) sms.enqueue(cl.phone, SMS_TEXT.change(S, b), 'change', b.id);
+      if (c.client.change && toClient && sms.enqueue(cl.phone, SMS_TEXT.change(S, b), 'change', b.id)) markClientSms();
       if (c.owner.onChange && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerChange(S, b, cl, old), 'owner-change', b.id);
     } else if (event === 'cancel') {
       if (c.client.cancel && toClient) sms.enqueue(cl.phone, SMS_TEXT.cancel(S, b), 'cancel', b.id);
@@ -160,14 +169,20 @@ function runReminders() {
     if (!c.client.reminder) return;
     const hour = new Date().getHours();
     if (hour < 8 || hour >= 21) return;
-    const now = Date.now(), win = num(c.client.reminderHours, 1, 72, 24) * 3600e3;
+    const now = Date.now(), win = num(c.client.reminderHours, 2, 72, 24) * 3600e3;
+    // pēdējā stundā pirms nakts (20:00–21:00) sūta arī tos, kuru logs atvērtos naktī
+    const effWin = hour === 20 ? win + 12 * 3600e3 : win;
+    const minLeft = Math.min(60 * 60e3, win / 2);
+    const isTest = c.provider === 'log';
     let changed = false;
     for (const b of db.bookings) {
-      if (b.status !== 'booked' || b.reminderSentAt) continue;
+      if (b.status !== 'booked') continue;
+      if (b.reminderSentAt && !(b.reminderTest && !isTest)) continue; // testa režīma atgādinājums īstam pakalpojumam neskaitās
       const left = U.ts(b.date, U.toMin(b.start)) - now;
-      if (left > win || left < 60 * 60e3) continue;
+      if (left > effWin || left < minLeft) continue;
       b.reminderSentAt = new Date().toISOString(); changed = true;
-      if (now - Date.parse(b.updatedAt || b.createdAt) < 3 * 3600e3) { b.reminderSkipped = 'nesen apstiprināts'; continue; }
+      if (isTest) b.reminderTest = true; else delete b.reminderTest;
+      if (b.lastClientSmsAt && now - Date.parse(b.lastClientSmsAt) < 3 * 3600e3) { b.reminderSkipped = 'nesen saņēma apstiprinājumu'; continue; }
       sms.enqueue(bookingClient(b).phone, SMS_TEXT.reminder(db.settings, b), 'reminder', b.id);
     }
     if (changed) save();
@@ -473,7 +488,8 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   if (lastHour >= 20) fail(429, `Tiešsaistes pieteikšanās īslaicīgi nav pieejama. Lūdzu zvani: ${S.phone}`);
 
   const b = createBooking({ user: null, service: svc, date: body.date, start: body.start, note: body.note, by: 'guest', guestName: name, guestPhone: phone });
-  notifyBooking('new', b, 'guest');
+  const actor = sessionUser(req);
+  notifyBooking('new', b, actor && actor.role === 'admin' ? 'admin' : 'guest');
   hit('guest:' + ip, 3, 3600e3);
   hit('guestday:' + ip, 6, 24 * 3600e3);
   // vienreizēja atslēga, ar kuru tūlīt pēc pieteikuma var izveidot kontu un piesaistīt šo pierakstu
@@ -539,13 +555,15 @@ route('POST', '/api/my/bookings', 'client', ({ user, body }) => {
 route('PUT', '/api/my/bookings/:id', 'client', ({ user, body, params }) => {
   const b = myBooking(user, params.id);
   assertModifiable(b);
+  if (body.date === b.date && body.start === b.start) return { booking: bookingView(b) }; // nekas nemainās
+  if ((b.rescheduled || 0) >= 3) fail(409, `Šo pierakstu jau pārcēli vairākas reizes. Lūdzu zvani: ${db.settings.phone}`);
   const svc = getService(b.serviceId);
   const dur = U.toMin(b.end) - U.toMin(b.start);
   if (!computeSlots(body.date, svc ? svc.duration : dur, b.id).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
   const old = { date: b.date, start: b.start };
   b.date = body.date; b.start = body.start; b.end = U.fromMin(U.toMin(body.start) + (svc ? svc.duration : dur));
   b.updatedAt = new Date().toISOString(); b.rescheduled = (b.rescheduled || 0) + 1;
-  delete b.reminderSentAt; delete b.reminderSkipped;
+  delete b.reminderSentAt; delete b.reminderSkipped; delete b.reminderTest;
   save();
   notifyBooking('change', b, 'client', old);
   return { booking: bookingView(b) };
@@ -647,9 +665,9 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
   next.updatedAt = new Date().toISOString();
   const before = { date: b.date, start: b.start, status: b.status };
   const timeChanged = next.date !== b.date || next.start !== b.start;
-  if (timeChanged) { delete next.reminderSentAt; delete next.reminderSkipped; }
+  if (timeChanged) { delete next.reminderSentAt; delete next.reminderSkipped; delete next.reminderTest; }
   Object.assign(b, next);
-  if (timeChanged) { delete b.reminderSentAt; delete b.reminderSkipped; }
+  if (timeChanged) { delete b.reminderSentAt; delete b.reminderSkipped; delete b.reminderTest; }
   save();
   if (body.notify !== false) {
     if (before.status === 'booked' && b.status === 'cancelled') notifyBooking('cancel', { ...b, date: before.date, start: before.start }, 'admin');
@@ -831,9 +849,13 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     }
     for (const k of ['onNew', 'onChange', 'onCancel']) if (x.owner && x.owner[k] !== undefined) next.owner[k] = !!x.owner[k];
     for (const k of ['confirm', 'change', 'cancel', 'reminder', 'onAdminChanges']) if (x.client && x.client[k] !== undefined) next.client[k] = !!x.client[k];
-    if (x.client && x.client.reminderHours !== undefined) next.client.reminderHours = num(x.client.reminderHours, 1, 72, 24);
+    if (x.client && x.client.reminderHours !== undefined) { const rh = x.client.reminderHours; next.client.reminderHours = rh === '' || rh === null ? 24 : num(rh, 2, 72, 24); }
     if (x.clearCreds) next.creds = SMS.defaults().creds;
-    for (const k of SMS.SECRET_KEYS) if (x.creds && typeof x.creds[k] === 'string' && x.creds[k].trim()) next.creds[k] = clean(x.creds[k], 200);
+    for (const k of SMS.SECRET_KEYS) if (x.creds && typeof x.creds[k] === 'string' && x.creds[k].trim()) {
+      const v = clean(x.creds[k], 200);
+      if (!/^[\x21-\x7E]+$/.test(v)) fail(400, 'Piekļuves datos ir neatļautas rakstzīmes (atstarpes, garumzīmes vai jaunas rindas). Nokopē tos vēlreiz.');
+      next.creds[k] = v;
+    }
     s.sms = next;
   }
   save();
@@ -851,9 +873,8 @@ route('POST', '/api/admin/sms/test', 'admin', async ({ body }) => {
 
 route('GET', '/api/admin/sms/log', 'admin', () => {
   const list = Array.isArray(db.smsLog) ? db.smsLog : [];
-  const month = new Date().toISOString().slice(0, 7);
-  const thisMonth = list.filter(e => e.at.startsWith(month) && e.status === 'sent');
-  return { log: list.slice(-100).reverse(), month: { messages: thisMonth.length, segments: thisMonth.reduce((a, e) => a + (e.segments || 1), 0) } };
+  const st = (db.smsStats || {})[U.today().slice(0, 7)] || { messages: 0, segments: 0 };
+  return { log: list.slice(-100).reverse(), month: st, limits: SMS.LIMITS };
 });
 
 route('GET', '/api/admin/export/bookings.csv', 'admin', ({ res }) => {

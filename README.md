@@ -51,6 +51,22 @@ Pēc pieslēgšanās sistēma pati novirza: administrators → `/admin`, klients
 - **Darba laiks** — grafiks katrai nedēļas dienai ar pārtraukumu, brīvdienas/atvaļinājumi.
 - **Iestatījumi** — salona informācija, pierakstu noteikumi (laika solis, cik iepriekš, līdz kuram brīdim var atcelt, maks. aktīvo pierakstu skaits, vai klienti drīkst paši reģistrēties), admina pieejas dati, rezerves kopija.
 
+## SMS paziņojumi (Sendberry)
+
+Admin panelis → **Iestatījumi → SMS paziņojumi**:
+
+1. Reģistrējies https://www.sendberry.com un portāla sadaļā **API** izveido atslēgu (key, name, password).
+2. Izvēlies pakalpojumu „Sendberry”, ievadi trīs vērtības, sūtītāju (piem., `LDStudio`, līdz 11 latīņu burtiem/cipariem) un savu mobilo.
+3. Saglabā un nospied **Sūtīt testa SMS**.
+
+Ko sūta: klientam — apstiprinājumu, pārcelšanu, atcelšanu un atgādinājumu (pēc noklusējuma 24 h iepriekš, ne naktī 21:00–8:00);
+frizierei — jauns pieraksts / klients pārcēla / klients atcēla. Katru veidu var izslēgt.
+
+Drošība un izmaksas: SMS sūta tikai uz LV, LT un EE numuriem; kopējais limits 60 SMS stundā / 300 diennaktī; viens klients
+var izraisīt ne vairāk kā 6 SMS stundā; klients pats var pārcelt pierakstu ne vairāk kā 3 reizes. Pēc noklusējuma teksts bez
+garumzīmēm (1 SMS = 160 zīmes). Testa režīms („Testa režīms”) neko nesūta — ziņas redzamas tikai žurnālā. Piekļuves atslēgas
+netiek rādītas ne panelī, ne rezerves kopijā.
+
 ## Publicēšana internetā
 
 Projektam der jebkurš hostings, kas atbalsta Node.js un **pastāvīgu disku** (dati glabājas failā `data/db.json`), piemēram, VPS, Railway (ar Volume) vai Render (ar Disk).

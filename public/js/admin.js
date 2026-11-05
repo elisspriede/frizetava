@@ -679,7 +679,7 @@
   /* ----------------------------------------------------------- SMS PAZIŅOJUMI */
   const SMS_TYPES = { confirm: 'Apstiprinājums klientam', change: 'Pārcelšana klientam', cancel: 'Atcelšana klientam', reminder: 'Atgādinājums klientam',
     'owner-new': 'Jauns pieraksts (tev)', 'owner-change': 'Pārcelts (tev)', 'owner-cancel': 'Atcelts (tev)', test: 'Testa SMS' };
-  const SMS_STATUS = { sent: ['completed', 'Nosūtīta'], test: ['booked', 'Testa režīms'], failed: ['noshow', 'Kļūda'], skipped: ['cancelled', 'Izlaista'] };
+  const SMS_STATUS = { sent: ['completed', 'Nosūtīta'], test: ['booked', 'Testa režīms'], failed: ['noshow', 'Kļūda'], unknown: ['noshow', 'Nav zināms'], skipped: ['cancelled', 'Izlaista'] };
 
   async function renderSmsCard() {
     const box = $('#smsCard'); if (!box) return;
@@ -715,7 +715,7 @@
           ${chk('c_onAdminChanges', cl.onAdminChanges, 'Arī par manām izmaiņām admin panelī')}</div></div>
         <div class="field"><span>Atgādinājums</span><div style="display:grid;gap:8px">
           ${chk('c_reminder', cl.reminder, 'Sūtīt atgādinājumu pirms vizītes')}
-          <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input class="input" type="number" name="reminderHours" min="1" max="72" value="${cl.reminderHours || 24}" style="width:84px;height:38px"> h pirms vizītes</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input class="input" type="number" name="reminderHours" min="2" max="72" value="${cl.reminderHours || 24}" style="width:84px;height:38px"> h pirms vizītes</label>
           <span class="tiny muted">Naktī (21:00–8:00) atgādinājumi netiek sūtīti.</span></div></div>
         <div class="field"><span>Teksts</span><div style="display:grid;gap:8px">${chk('ascii', c.ascii !== false, 'Bez garumzīmēm (1 SMS = 160 zīmes)')}
           <span class="tiny muted">Ar garumzīmēm vienā SMS ietilpst tikai 70 zīmes — apstiprinājums aizņemtu 2–3 SMS.</span></div></div>
@@ -731,7 +731,7 @@
       </div>
       <div class="card-head" style="margin:24px 0 8px"><h3 style="font-size:15px">Pēdējās SMS</h3><span class="muted small">Šomēnes nosūtītas: <b>${logData.month.messages}</b> (${logData.month.segments} SMS daļas)</span></div>
       <div class="table-wrap" style="max-height:320px;overflow:auto">${logData.log.length ? `<table class="table"><thead><tr><th>Laiks</th><th>Veids</th><th>Numurs</th><th>Statuss</th><th>Piezīme</th></tr></thead><tbody>
-        ${logData.log.map(e => { const st = SMS_STATUS[e.status] || ['cancelled', e.status]; return `<tr><td style="white-space:nowrap">${fmt.dateShort(e.at.slice(0, 10))} ${new Date(e.at).toTimeString().slice(0, 5)}</td>
+        ${logData.log.map(e => { const st = SMS_STATUS[e.status] || ['cancelled', e.status]; return `<tr><td style="white-space:nowrap">${fmt.dateShort(dateStr(new Date(e.at)))} ${new Date(e.at).toTimeString().slice(0, 5)}</td>
           <td>${esc(SMS_TYPES[e.type] || e.type)}</td><td style="font-variant-numeric:tabular-nums">${esc(e.to || '')}</td><td><span class="badge ${st[0]}">${esc(st[1])}</span></td>
           <td class="small muted" style="max-width:360px">${esc(e.error || e.text || (e.segments > 1 ? e.segments + ' SMS daļas' : ''))}</td></tr>`; }).join('')}</tbody></table>`
         : '<p class="muted small">Vēl nav nosūtīta neviena SMS.</p>'}</div>`;
