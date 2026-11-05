@@ -695,11 +695,15 @@
       <form id="smsForm" class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))" autocomplete="off">
         <label class="field"><span>SMS pakalpojums</span><select class="input" name="provider">
           <option value="" ${!c.provider ? 'selected' : ''}>Izslēgts</option>
+          <option value="sendberry" ${c.provider === 'sendberry' ? 'selected' : ''}>Sendberry (Latvija, ieteicams)</option>
           <option value="twilio" ${c.provider === 'twilio' ? 'selected' : ''}>Twilio</option>
           <option value="smsapi" ${c.provider === 'smsapi' ? 'selected' : ''}>SMSAPI</option>
           <option value="log" ${c.provider === 'log' ? 'selected' : ''}>Testa režīms (nesūta, tikai žurnālā)</option></select></label>
         <label class="field"><span>Sūtītāja vārds</span><input class="input" name="sender" maxlength="15" value="${esc(c.sender || '')}" placeholder="LDStudio"></label>
         <label class="field"><span>Tavs mobilais (paziņojumiem tev)</span><input class="input" name="ownerPhone" type="tel" value="${esc(c.ownerPhone || '')}" placeholder="+371 2…"></label>
+        <div class="full prov prov-sendberry" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+          ${secret('sendberryKey', cs.sendberryKey, 'Sendberry API key', '')}${secret('sendberryName', cs.sendberryName, 'Sendberry API name', '')}${secret('sendberryPassword', cs.sendberryPassword, 'Sendberry API password', '')}
+          <p class="tiny muted" style="grid-column:1/-1">Sendberry portālā: API sadaļā izveido atslēgu — tur būs key, name un password. Sūtītāja vārdam „LDStudio” var būt vajadzīgs Sendberry apstiprinājums.</p></div>
         <div class="full prov prov-twilio" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
           ${secret('twilioSid', cs.twilioSid, 'Twilio Account SID', 'AC…')}${secret('twilioToken', cs.twilioToken, 'Twilio Auth Token', '')}</div>
         <div class="full prov prov-smsapi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
@@ -742,7 +746,7 @@
         provider: v.provider, sender: v.sender, ownerPhone: v.ownerPhone, ascii: v.ascii,
         owner: { onNew: v.o_onNew, onChange: v.o_onChange, onCancel: v.o_onCancel },
         client: { confirm: v.c_confirm, change: v.c_change, cancel: v.c_cancel, reminder: v.c_reminder, onAdminChanges: v.c_onAdminChanges, reminderHours: v.reminderHours },
-        creds: { twilioSid: v.twilioSid || '', twilioToken: v.twilioToken || '', smsapiToken: v.smsapiToken || '' } } };
+        creds: { sendberryKey: v.sendberryKey || '', sendberryName: v.sendberryName || '', sendberryPassword: v.sendberryPassword || '', twilioSid: v.twilioSid || '', twilioToken: v.twilioToken || '', smsapiToken: v.smsapiToken || '' } } };
       await withBusy(e.submitter, async () => {
         try { settings = (await API.put('/api/admin/settings', payload)).settings; toast('SMS iestatījumi saglabāti.'); renderSmsCard(); } catch (x) { toast(x.message, 'error'); }
       });

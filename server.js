@@ -820,7 +820,7 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     if (x.provider !== undefined) { if (x.provider !== '' && !SMS.PROVIDERS.includes(x.provider)) fail(400, 'Nezināms SMS pakalpojums.'); next.provider = x.provider; }
     if (x.sender !== undefined) {
       const snd = clean(x.sender, 20);
-      if (snd && !/^[A-Za-z0-9][A-Za-z0-9 .-]{0,10}$/.test(snd) && !/^\+?\d{6,15}$/.test(snd)) fail(400, 'Sūtītāja vārds: līdz 11 latīņu burtiem/cipariem (piem., LDStudio) vai tālruņa numurs.');
+      if (snd && !/^[A-Za-z0-9][A-Za-z0-9 ]{0,10}$/.test(snd) && !/^\+?\d{6,15}$/.test(snd)) fail(400, 'Sūtītāja vārds: līdz 11 latīņu burtiem/cipariem bez garumzīmēm (piem., LDStudio) vai tālruņa numurs.');
       next.sender = snd;
     }
     if (x.ascii !== undefined) next.ascii = !!x.ascii;
