@@ -1,0 +1,12 @@
+{
+  "name": "frizetava",
+  "version": "1.0.0",
+  "description": "Frizētavas mājaslapa ar pierakstu sistēmu un administratora paneli",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node scripts/demo.js"
+  },
+  "engines": { "node": ">=20" }
+}

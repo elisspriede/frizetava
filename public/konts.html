@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="lv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mans konts — Matu studija</title>
+  <meta name="theme-color" content="#F8F6EE">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%232E3A2F'/%3E%3Cg fill='none' stroke='%23D9C9B2' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='3'/%3E%3Ccircle cx='11' cy='21' r='3'/%3E%3Cpath d='M23 9 13.2 18.8M19.5 19.5 23 23M13.2 13.2 16 16'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@1,9..144,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <nav class="glass">
+      <a class="brand" href="/" id="brand"></a>
+      <div class="actions" style="margin-left:auto">
+        <button class="btn btn-sm btn-ghost" id="profileBtn"></button>
+        <button class="icon-btn" id="logoutBtn" aria-label="Iziet" title="Iziet"></button>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="app-head">
+      <div>
+        <span class="eyebrow" id="today"></span>
+        <h1 style="margin-top:10px">Sveiki, <span class="serif" id="hello">…</span></h1>
+      </div>
+      <p class="muted" style="max-width:360px" id="rules"></p>
+    </div>
+
+    <div class="client-grid">
+      <section class="glass card" id="wizard" aria-live="polite"></section>
+      <div style="display:grid;gap:18px">
+        <section class="glass-dark next-card" id="nextCard"></section>
+        <section class="glass card">
+          <div class="card-head"><h3>Mani pieraksti</h3><span class="muted small" id="upCount"></span></div>
+          <div id="upcoming"></div>
+        </section>
+        <section class="glass card">
+          <div class="card-head"><h3>Vēsture</h3></div>
+          <div id="history"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/client.js"></script>
+</body>
+</html>

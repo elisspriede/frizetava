@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="lv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pieslēgties — Matu studija</title>
+  <meta name="theme-color" content="#F8F6EE">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%232E3A2F'/%3E%3Cg fill='none' stroke='%23D9C9B2' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='3'/%3E%3Ccircle cx='11' cy='21' r='3'/%3E%3Cpath d='M23 9 13.2 18.8M19.5 19.5 23 23M13.2 13.2 16 16'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@1,9..144,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="auth-page">
+    <aside class="auth-side">
+      <div class="orb" style="width:320px;height:320px;background:rgba(201,111,79,.55);right:-90px;top:-60px"></div>
+      <div class="orb" style="width:360px;height:360px;background:rgba(107,127,91,.6);left:-120px;bottom:-140px"></div>
+      <a class="brand" href="/" id="brand" style="color:#fff;position:relative"></a>
+      <div style="position:relative">
+        <h2>Tavs laiks.<br><span class="serif">Tavs stils.</span></h2>
+        <p class="big" style="margin-top:18px;max-width:380px;opacity:.75;font-size:16px">Pieslēdzies, lai redzētu brīvos laikus, pieteiktos vizītei vai pārceltu esošo pierakstu.</p>
+      </div>
+      <div class="swatches big" style="position:relative">
+        <span style="background:#2E3A2F"></span><span style="background:#6B7F5B"></span><span style="background:#D9C9B2"></span><span style="background:#C96F4F"></span><span style="background:#F8F6EE"></span>
+      </div>
+    </aside>
+
+    <main class="auth-main">
+      <div class="glass auth-card">
+        <span class="eyebrow">Klienta konts</span>
+        <h1 style="margin-top:8px" id="title">Laipni lūdzam atpakaļ</h1>
+        <div class="seg" role="tablist" id="seg">
+          <button class="on" data-tab="login" role="tab" aria-selected="true">Pieslēgties</button>
+          <button data-tab="register" role="tab" aria-selected="false">Izveidot kontu</button>
+        </div>
+
+        <form id="loginForm" autocomplete="on">
+          <label class="field"><span>Lietotājvārds</span><input class="input" name="username" autocomplete="username" required autocapitalize="none" spellcheck="false"></label>
+          <label class="field"><span>Parole</span>
+            <div class="input-group"><input class="input" type="password" name="password" autocomplete="current-password" required>
+              <button type="button" class="icon-btn" data-toggle-pass aria-label="Rādīt paroli"></button></div>
+          </label>
+          <div class="alert hidden" id="loginErr" role="alert"></div>
+          <button class="btn btn-lg btn-block" type="submit">Pieslēgties</button>
+          <p class="small muted" style="text-align:center">Lietotājvārdu un paroli vari saņemt arī salonā.</p>
+        </form>
+
+        <form id="registerForm" class="hidden" autocomplete="on">
+          <label class="field"><span>Vārds, uzvārds</span><input class="input" name="name" autocomplete="name" required></label>
+          <div class="form-grid">
+            <label class="field"><span>Tālrunis</span><input class="input" name="phone" type="tel" autocomplete="tel" placeholder="+371 …" required></label>
+            <label class="field"><span>E-pasts <span class="muted">(nav obligāts)</span></span><input class="input" name="email" type="email" autocomplete="email"></label>
+          </div>
+          <label class="field"><span>Lietotājvārds</span><input class="input" name="username" autocomplete="username" required autocapitalize="none" spellcheck="false" placeholder="piem. anna.berzina"></label>
+          <label class="field"><span>Parole <span class="muted">(vismaz 6 simboli)</span></span>
+            <div class="input-group"><input class="input" type="password" name="password" autocomplete="new-password" minlength="6" required>
+              <button type="button" class="icon-btn" data-toggle-pass aria-label="Rādīt paroli"></button></div>
+          </label>
+          <div class="alert hidden" id="regErr" role="alert"></div>
+          <button class="btn btn-lg btn-accent btn-block" type="submit">Izveidot kontu</button>
+        </form>
+        <div class="alert info hidden" id="regClosed">Reģistrācija šobrīd notiek tikai salonā. Lūdzu sazinies ar mums, lai saņemtu lietotājvārdu un paroli.</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+  (async () => {
+    $$('[data-toggle-pass]').forEach(b => b.innerHTML = icon('eye'));
+    passwordToggle();
+    const go = u => location.replace(u.role === 'admin' ? '/admin' : '/konts');
+    const [me, info] = await Promise.all([API.get('/api/me').catch(() => ({})), API.get('/api/public').catch(() => null)]);
+    if (me.user) return go(me.user);
+    const salon = info ? info.settings.salonName : 'Matu studija';
+    $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(salon)}</span>`;
+    document.title = `Pieslēgties — ${salon}`;
+    const regAllowed = !info || info.settings.allowRegistration;
+
+    const setTab = tab => {
+      $$('#seg button').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+      $('#loginForm').classList.toggle('hidden', tab !== 'login');
+      $('#registerForm').classList.toggle('hidden', tab !== 'register' || !regAllowed);
+      $('#regClosed').classList.toggle('hidden', tab !== 'register' || regAllowed);
+      $('#title').textContent = tab === 'login' ? 'Laipni lūdzam atpakaļ' : 'Izveido savu kontu';
+      const f = $(tab === 'login' ? '#loginForm input' : '#registerForm input');
+      if (f && !f.closest('.hidden')) f.focus();
+    };
+    $$('#seg button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+    if (location.hash === '#registreties') setTab('register');
+
+    $('#loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const err = $('#loginErr'); err.classList.add('hidden');
+      await withBusy(e.submitter, async () => {
+        try { const r = await API.post('/api/login', formData(e.target)); go(r.user); }
+        catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
+      });
+    });
+    $('#registerForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const err = $('#regErr'); err.classList.add('hidden');
+      await withBusy(e.submitter, async () => {
+        try { const r = await API.post('/api/register', formData(e.target)); go(r.user); }
+        catch (x) { err.textContent = x.message; err.classList.remove('hidden'); }
+      });
+    });
+    const nameIn = $('#registerForm [name=name]'), userIn = $('#registerForm [name=username]');
+    nameIn.addEventListener('input', () => { if (!userIn.dataset.touched) userIn.value = slugUsername(nameIn.value); });
+    userIn.addEventListener('input', () => { userIn.dataset.touched = '1'; });
+  })();
+  </script>
+</body>
+</html>
