@@ -18,6 +18,7 @@
       <a class="brand" href="/" id="brand"></a>
       <div class="nav-links">
         <a href="#pakalpojumi">Pakalpojumi</a>
+        <a href="/galerija">Galerija</a>
         <a href="#par-mani">Par mani</a>
         <a href="#kontakti">Kontakti</a>
       </div>
@@ -100,25 +101,50 @@
       </div>
     </section>
 
-    <section class="section" id="par-mani">
-      <div class="palette-strip">
-        <div class="glass about">
-          <span class="eyebrow">Par mani</span>
-          <h2 style="font-size:clamp(28px,3.4vw,42px);letter-spacing:-.03em">Laiks tikai <span class="serif" style="color:var(--accent)">tev</span>.</h2>
-          <p id="about"></p>
-          <div class="sig" id="sig"></div>
+    <section class="section hidden" id="darbi" style="padding-top:8px">
+      <div class="glass works">
+        <div class="works-intro">
+          <span class="eyebrow">Mani darbi</span>
+          <h2>Īsti rezultāti</h2>
+          <p>Iedvesmojies no reāliem klientu rezultātiem!</p>
+          <a class="btn btn-ghost" href="/galerija" style="width:fit-content">Aplūkot galeriju <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
         </div>
-        <div class="glass-dark hours-card">
-          <span class="eyebrow" style="color:var(--tertiary)">Darba laiks</span>
-          <div class="hours-list" id="hours"></div>
-          <div id="closures" class="small" style="margin-top:14px;opacity:.75"></div>
+        <div class="works-thumbs" id="worksThumbs"></div>
+      </div>
+    </section>
+
+    <section class="section" id="par-mani">
+      <div class="about-grid">
+        <figure class="about-photo">
+          <img id="aboutPhoto" src="/img/lasma.jpg" srcset="/img/lasma-sm.jpg 560w, /img/lasma.jpg 819w" sizes="(max-width: 960px) 90vw, 460px" width="819" height="1024" alt="Friziere" loading="lazy" decoding="async">
+          <figcaption class="glass about-badge"><span class="pulse"></span>Pieraksts tiešsaistē 24/7</figcaption>
+        </figure>
+        <div class="about-text">
+          <span class="eyebrow">Par mani</span>
+          <p class="hello serif">Sveika!</p>
+          <h2 id="ownerHeading">Es esmu <span id="ownerName">Lāsma</span></h2>
+          <p class="role" id="ownerTitle">Tava friziere</p>
+          <div class="divider" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 1 1 12 6a5 5 0 1 1 7.5 6.6Z"/></svg></div>
+          <p class="about-lead" id="about"></p>
+          <p class="about-quote serif" id="aboutQuote"></p>
+          <div class="cta">
+            <a class="btn btn-accent" href="/pieteikties">Pieteikties vizītei</a>
+            <a class="btn btn-ghost hidden" href="/galerija" id="aboutGalleryBtn">Aplūkot manus darbus</a>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="section" id="kontakti" style="padding-top:20px">
       <div class="section-head"><div><span class="eyebrow">Kontakti</span><h2>Kur mani atrast</h2></div></div>
-      <div class="contact-grid" id="contacts"></div>
+      <div class="contact-wrap">
+        <div class="contact-grid" id="contacts"></div>
+        <div class="glass-dark hours-card">
+          <span class="eyebrow" style="color:var(--tertiary)">Darba laiks</span>
+          <div class="hours-list" id="hours"></div>
+          <div id="closures" class="small" style="margin-top:14px;opacity:.75"></div>
+        </div>
+      </div>
       <div class="glass-dark cta-band">
         <div>
           <span class="eyebrow" style="color:var(--tertiary)">Pieraksts 24/7</span>

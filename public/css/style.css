@@ -587,3 +587,111 @@ body.has-wa { padding-bottom: 84px; }
   .wa-fab { padding: 0; width: 56px; height: 56px; justify-content: center; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   .wa-fab .wa-label { display: none; }
 }
+
+/* ==========================================================================
+   PAR MANI (ar foto)
+   ========================================================================== */
+.about-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 48px; align-items: center; }
+.about-photo { position: relative; margin: 0; }
+.about-photo img { width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; object-position: 50% 20%; border-radius: 34px; box-shadow: var(--shadow-lg); display: block; }
+.about-photo::before { content: ''; position: absolute; inset: 18px -18px -18px 18px; border-radius: 34px; border: 1.5px solid rgba(201, 111, 79, .35); z-index: -1; }
+.about-badge { position: absolute; left: -16px; bottom: 34px; padding: 12px 16px; border-radius: 18px; font-size: 13px; font-weight: 600; color: var(--primary); display: flex; align-items: center; }
+.about-text { display: grid; gap: 14px; max-width: 560px; }
+.about-text .hello { font-size: clamp(34px, 4.4vw, 52px); color: var(--accent); line-height: 1; margin-top: 4px; }
+.about-text h2 { font-size: clamp(36px, 5vw, 62px); font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+.about-text .role { font-size: 13px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--ink-2); }
+.about-text .divider { display: flex; align-items: center; gap: 12px; color: var(--accent); max-width: 280px; }
+.about-text .divider::before, .about-text .divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(201, 111, 79, .5), transparent); }
+.about-text .divider svg { width: 20px; height: 20px; }
+.about-lead { font-size: 18.5px; color: var(--ink-2); line-height: 1.65; }
+.about-quote { font-size: clamp(22px, 2.6vw, 28px); color: var(--primary); padding: 12px 22px; border-radius: 18px; width: fit-content;
+  background: linear-gradient(90deg, rgba(217, 201, 178, .55), rgba(217, 201, 178, 0)); }
+.about-text .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+
+.contact-wrap { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.contact-wrap .contact-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* ==========================================================================
+   MANI DARBI (sākumlapā) UN GALERIJA
+   ========================================================================== */
+.works { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 2fr); gap: 32px; align-items: center; padding: 34px; }
+.works-intro { display: grid; gap: 12px; }
+.works-intro h2 { font-size: clamp(30px, 3.6vw, 44px); font-weight: 800; letter-spacing: -.035em; }
+.works-intro p { color: var(--ink-2); font-size: 16.5px; }
+.works-thumbs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.works-thumbs a { display: block; border-radius: 20px; overflow: hidden; aspect-ratio: 3 / 4; position: relative; box-shadow: var(--shadow-sm); }
+.works-thumbs img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s var(--ease); display: block; }
+.works-thumbs a:hover img { transform: scale(1.05); }
+.ba-chip { position: absolute; left: 10px; top: 10px; font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 99px; background: rgba(255, 255, 255, .85); color: var(--primary); letter-spacing: .02em; }
+
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.filters button { height: 38px; padding: 0 16px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .9); background: rgba(255, 255, 255, .55); font-weight: 600; font-size: 13.5px; color: var(--ink-2); cursor: pointer; transition: .2s; }
+.filters button:hover { background: #fff; }
+.filters button[aria-pressed="true"] { background: var(--primary); color: #fff; border-color: var(--primary); }
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; padding-bottom: 60px; }
+.g-card { margin: 0; border-radius: 24px; overflow: hidden; background: var(--glass-solid); border: 1px solid var(--glass-border); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; }
+.g-media { position: relative; aspect-ratio: 4 / 5; overflow: hidden; background: rgba(46, 58, 47, .06); }
+.g-media > button.g-open { position: absolute; inset: 0; border: 0; padding: 0; background: none; cursor: zoom-in; }
+.g-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.g-card figcaption { padding: 12px 16px 14px; display: grid; gap: 2px; }
+.g-card figcaption b { font-size: 14.5px; color: var(--primary); }
+.g-card figcaption span { font-size: 12.5px; color: var(--muted); }
+
+/* pirms / pēc salīdzinājums */
+.compare { position: relative; width: 100%; height: 100%; overflow: hidden; --pos: 50%; touch-action: pan-y; user-select: none; }
+.compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.compare .before { clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
+.compare .line { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 12px rgba(0, 0, 0, .35); pointer-events: none; }
+.compare .knob { position: absolute; top: 50%; left: var(--pos); width: 42px; height: 42px; margin: -21px 0 0 -21px; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: var(--shadow); display: grid; place-items: center; pointer-events: none; color: var(--primary); }
+.compare .knob svg { width: 22px; height: 22px; }
+.compare input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; -webkit-appearance: none; appearance: none; }
+.compare input[type=range]:focus-visible ~ .knob { outline: 3px solid var(--accent); outline-offset: 2px; }
+.compare .tag { position: absolute; top: 12px; font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: rgba(31, 39, 32, .62); color: #fff; letter-spacing: .04em; pointer-events: none; }
+.compare .tag.l { left: 12px; } .compare .tag.r { right: 12px; }
+
+/* pilnekrāna skats */
+.lightbox { position: fixed; inset: 0; z-index: 950; background: rgba(20, 25, 20, .9); display: grid; grid-template-rows: 1fr auto; padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); animation: fade .2s; }
+.lightbox .lb-stage { position: relative; display: grid; place-items: center; min-height: 0; }
+.lightbox .lb-stage > img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 14px; }
+.lightbox .lb-stage .compare { width: min(100%, calc((100vh - 140px) * .8)); height: auto; aspect-ratio: 4 / 5; max-height: calc(100vh - 140px); border-radius: 14px; }
+.lightbox .lb-cap { color: #f3efe4; text-align: center; padding-top: 12px; font-size: 14.5px; }
+.lightbox .lb-cap span { opacity: .65; margin-left: 8px; }
+.lightbox .lb-btn { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.lightbox .lb-btn:hover { background: rgba(255, 255, 255, .26); }
+.lightbox .lb-btn svg { width: 22px; height: 22px; }
+.lightbox .lb-prev { left: 4px; } .lightbox .lb-next { right: 4px; }
+.lightbox .lb-close { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; margin-top: 0; z-index: 2; }
+
+/* admin galerija */
+.drop { display: grid; place-items: center; gap: 6px; text-align: center; min-height: 170px; padding: 18px; border-radius: 18px; border: 2px dashed rgba(46, 58, 47, .22); background: rgba(255, 255, 255, .45); cursor: pointer; transition: .2s; color: var(--ink-2); font-size: 14px; position: relative; overflow: hidden; }
+.drop:hover, .drop.over { border-color: var(--secondary); background: rgba(255, 255, 255, .8); }
+.drop svg { width: 30px; height: 30px; color: var(--secondary); }
+.drop img.prev { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.drop .lbl { position: absolute; left: 10px; top: 10px; z-index: 1; }
+.drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.adm-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.adm-g { border-radius: 20px; overflow: hidden; background: rgba(255, 255, 255, .55); border: 1px solid rgba(255, 255, 255, .9); box-shadow: var(--shadow-sm); }
+.adm-g .media { aspect-ratio: 4 / 5; position: relative; background: rgba(46, 58, 47, .06); }
+.adm-g .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.adm-g .media.split { display: grid; grid-template-columns: 1fr 1fr; }
+.adm-g.hidden-item .media { opacity: .45; }
+.adm-g .body { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.adm-g .body b { font-size: 13.5px; }
+.adm-g .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.adm-g .acts .icon-btn { width: 34px; height: 34px; }
+.about-admin-photo { width: 120px; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 16px; box-shadow: var(--shadow-sm); }
+
+@media (max-width: 960px) {
+  .about-grid { grid-template-columns: 1fr; gap: 34px; }
+  .about-photo { max-width: 460px; margin: 0 auto; width: 100%; }
+  .about-badge { left: 8px; }
+  .contact-wrap { grid-template-columns: 1fr; }
+  .works { grid-template-columns: 1fr; padding: 24px; }
+}
+@media (max-width: 720px) {
+  .works-thumbs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .about-photo::before { inset: 12px -10px -12px 10px; }
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .g-card { border-radius: 18px; }
+  .g-card figcaption { padding: 10px 12px; }
+}

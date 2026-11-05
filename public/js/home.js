@@ -8,8 +8,27 @@
     $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(s.salonName)}</span>`;
     $('#heroEyebrow').textContent = s.salonName;
     if (s.tagline) $('#tagline').textContent = s.tagline + ' Piesakies vizītei tiešsaistē — dažos klikšķos.';
-    $('#about').textContent = s.about;
-    $('#sig').textContent = '— ' + s.salonName;
+    // Par mani
+    $('#about').textContent = s.about || '';
+    if (s.ownerName) { $('#ownerName').textContent = s.ownerName; $('#aboutPhoto').alt = `${s.ownerName}${s.ownerTitle ? ', ' + s.ownerTitle.toLowerCase() : ''}`; }
+    else $('#ownerHeading').textContent = s.salonName;
+    $('#ownerTitle').textContent = s.ownerTitle || '';
+    $('#ownerTitle').classList.toggle('hidden', !s.ownerTitle);
+    $('#aboutQuote').textContent = s.aboutQuote || '';
+    $('#aboutQuote').classList.toggle('hidden', !s.aboutQuote);
+    const photo = $('#aboutPhoto');
+    if (!s.aboutPhoto) photo.closest('figure').classList.add('hidden');
+    else if (s.aboutPhoto !== '/img/lasma.jpg') { photo.removeAttribute('srcset'); photo.src = s.aboutPhoto; }
+    // Mani darbi (tikai ja galerijā ir bildes)
+    if (s.hasGallery) {
+      API.get('/api/gallery').then(({ items }) => {
+        if (!items.length) return;
+        $('#worksThumbs').innerHTML = items.slice(0, 4).map(it => `<a href="/galerija#d-${encodeURIComponent(it.id)}" aria-label="${esc(it.caption || 'Darbs')}${it.type === 'pair' ? ' (pirms un pēc)' : ''}">
+          <img src="${esc(it.thumb)}" alt="" loading="lazy" decoding="async">${it.type === 'pair' ? '<span class="ba-chip">Pirms / pēc</span>' : ''}</a>`).join('');
+        $('#darbi').classList.remove('hidden');
+        $('#aboutGalleryBtn').classList.remove('hidden');
+      }).catch(() => {});
+    }
     $('#copy').textContent = `© ${new Date().getFullYear()} ${s.salonName}`;
 
     // pieteikšanās: klientam — savā kontā; pārējiem — bez konta (ja atļauts)

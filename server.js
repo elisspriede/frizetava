@@ -105,6 +105,8 @@ function publicInfo() {
   return {
     settings: {
       salonName: s.salonName, tagline: s.tagline, about: s.about, address: s.address, phone: s.phone, email: s.email,
+      ownerName: s.ownerName || '', ownerTitle: s.ownerTitle || '', aboutQuote: s.aboutQuote || '', aboutPhoto: s.aboutPhoto || '',
+      hasGallery: Array.isArray(db.gallery) && db.gallery.some(g => g.visible !== false),
       instagram: s.instagram, whatsapp: s.whatsapp || '', allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
       bookingDaysAhead: s.bookingDaysAhead, maxActiveBookings: s.maxActiveBookings
     },
@@ -366,10 +368,10 @@ function stats(range) {
 /* ------------------------------------------------------------------ routes */
 
 const routes = [];
-const route = (method, pattern, access, handler) => {
+const route = (method, pattern, access, handler, opts = {}) => {
   const keys = [];
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '$');
-  routes.push({ method, re, keys, access, handler });
+  routes.push({ method, re, keys, access, handler, opts });
 };
 
 // --- publiski
@@ -826,6 +828,15 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     s.whatsapp = wa;
   }
   if (b.about !== undefined) s.about = clean(b.about, 2000);
+  for (const k of ['ownerName', 'ownerTitle']) if (b[k] !== undefined) s[k] = clean(b[k], 60);
+  if (b.aboutQuote !== undefined) s.aboutQuote = clean(b.aboutQuote, 120);
+  if (b.aboutPhoto !== undefined) {
+    const prev = s.aboutPhoto;
+    const v = clean(b.aboutPhoto, 200);
+    if (v === '' || v === DEFAULT_ABOUT_PHOTO) s.aboutPhoto = v;
+    else s.aboutPhoto = checkUploadUrl(v, 'Foto');
+    if (prev !== s.aboutPhoto) setImmediate(() => removeUploadsIfUnused([prev]));
+  }
   if (b.slotStep !== undefined) s.slotStep = [5, 10, 15, 20, 30, 60].includes(+b.slotStep) ? +b.slotStep : 15;
   if (b.minAdvanceHours !== undefined) s.minAdvanceHours = num(b.minAdvanceHours, 0, 168, 2);
   if (b.cancelHours !== undefined) s.cancelHours = num(b.cancelHours, 0, 168, 12);
@@ -897,6 +908,115 @@ route('GET', '/api/admin/backup', 'admin', ({ res }) => {
   return undefined;
 });
 
+/* ------------------------------------------------------------------ attēli: augšupielāde un galerija */
+const UPLOAD_DIR = path.join(store.DATA_DIR, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_NAME_RE = /^img_[a-f0-9]{24}\.(jpg|png|webp)$/;
+const DEFAULT_ABOUT_PHOTO = '/img/lasma.jpg';
+if (!Array.isArray(db.gallery)) db.gallery = [];
+
+// pārbauda faila sākuma baitus — saglabā tikai īstus JPG/PNG/WebP attēlus
+function imageType(buf) {
+  if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (buf.length > 12 && buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return 'webp';
+  return null;
+}
+const uploadUrl = name => '/uploads/' + name;
+const uploadNameFromUrl = u => { const m = /^\/uploads\/([^/]+)$/.exec(String(u || '')); return m && UPLOAD_NAME_RE.test(m[1]) ? m[1] : null; };
+const uploadExists = name => !!name && UPLOAD_NAME_RE.test(name) && fs.existsSync(path.join(UPLOAD_DIR, name));
+function referencedUploads() {
+  const set = new Set();
+  for (const g of db.gallery) for (const k of ['full', 'thumb', 'beforeFull', 'beforeThumb']) { const n = uploadNameFromUrl(g[k]); if (n) set.add(n); }
+  const ap = uploadNameFromUrl(db.settings.aboutPhoto); if (ap) set.add(ap);
+  return set;
+}
+// izdzēš augšupielādes, kuras neviens neizmanto un kas vecākas par 24 h (piem., pārtraukta augšupielāde)
+function cleanupUploads() {
+  try {
+    const used = referencedUploads(), now = Date.now();
+    for (const f of fs.readdirSync(UPLOAD_DIR)) {
+      if (!UPLOAD_NAME_RE.test(f) || used.has(f)) continue;
+      const st = fs.statSync(path.join(UPLOAD_DIR, f));
+      if (now - st.mtimeMs > 24 * 3600e3) fs.unlinkSync(path.join(UPLOAD_DIR, f));
+    }
+  } catch (e) { console.error('Attēlu tīrīšanas kļūda:', e.message); }
+}
+function removeUploadsIfUnused(urls) {
+  const used = referencedUploads();
+  for (const u of urls) { const n = uploadNameFromUrl(u); if (n && !used.has(n)) fs.rm(path.join(UPLOAD_DIR, n), { force: true }, () => {}); }
+}
+setTimeout(cleanupUploads, 60e3).unref();
+setInterval(cleanupUploads, 6 * 3600e3).unref();
+
+route('POST', '/api/admin/uploads', 'admin', ({ body }) => {
+  if (!Buffer.isBuffer(body) || body.length < 100) fail(400, 'Tukšs vai bojāts attēls.');
+  const ext = imageType(body);
+  if (!ext) fail(415, 'Fails nav JPG, PNG vai WebP attēls.');
+  const name = `img_${crypto.randomBytes(12).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), body);
+  return { url: uploadUrl(name), size: body.length };
+}, { raw: 8e6 });
+
+const galleryView = g => ({
+  id: g.id, type: g.type, full: g.full, thumb: g.thumb, w: g.w || null, h: g.h || null,
+  beforeFull: g.type === 'pair' ? g.beforeFull : undefined, beforeThumb: g.type === 'pair' ? g.beforeThumb : undefined,
+  caption: g.caption || '', category: g.category || ''
+});
+const gallerySorted = () => [...db.gallery].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || String(b.createdAt).localeCompare(String(a.createdAt)));
+
+route('GET', '/api/gallery', null, () => ({ items: gallerySorted().filter(g => g.visible !== false).map(galleryView) }));
+route('GET', '/api/admin/gallery', 'admin', () => ({ items: gallerySorted().map(g => ({ ...galleryView(g), visible: g.visible !== false, createdAt: g.createdAt })) }));
+
+function checkUploadUrl(u, label) {
+  const n = uploadNameFromUrl(u);
+  if (!n || !uploadExists(n)) fail(400, `${label}: attēls nav atrasts. Augšupielādē to vēlreiz.`);
+  return uploadUrl(n);
+}
+route('POST', '/api/admin/gallery', 'admin', ({ body }) => {
+  const type = body.type === 'pair' ? 'pair' : 'single';
+  const item = {
+    id: U.uid('gal'), type,
+    full: checkUploadUrl(body.full, type === 'pair' ? 'Bilde „pēc”' : 'Bilde'),
+    thumb: checkUploadUrl(body.thumb || body.full, 'Sīktēls'),
+    w: num(body.w, 1, 10000, 0) || null, h: num(body.h, 1, 10000, 0) || null,
+    caption: clean(body.caption, 160), category: clean(body.category, 40),
+    visible: body.visible !== false, order: 0, createdAt: new Date().toISOString()
+  };
+  if (type === 'pair') {
+    item.beforeFull = checkUploadUrl(body.beforeFull, 'Bilde „pirms”');
+    item.beforeThumb = checkUploadUrl(body.beforeThumb || body.beforeFull, 'Sīktēls „pirms”');
+  }
+  for (const g of db.gallery) g.order = (g.order ?? 0) + 1; // jaunākais — pirmais
+  db.gallery.push(item);
+  save();
+  return { item: { ...galleryView(item), visible: item.visible } };
+});
+route('PUT', '/api/admin/gallery/:id', 'admin', ({ body, params }) => {
+  const g = db.gallery.find(x => x.id === params.id);
+  if (!g) fail(404, 'Attēls nav atrasts.');
+  if (body.caption !== undefined) g.caption = clean(body.caption, 160);
+  if (body.category !== undefined) g.category = clean(body.category, 40);
+  if (body.visible !== undefined) g.visible = !!body.visible;
+  save();
+  return { item: { ...galleryView(g), visible: g.visible !== false } };
+});
+route('POST', '/api/admin/gallery/order', 'admin', ({ body }) => {
+  const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
+  const pos = new Map(ids.map((id, i) => [id, i]));
+  for (const g of db.gallery) g.order = pos.has(g.id) ? pos.get(g.id) : ids.length + (g.order ?? 0);
+  save();
+  return { ok: true };
+});
+route('DELETE', '/api/admin/gallery/:id', 'admin', ({ params }) => {
+  const i = db.gallery.findIndex(x => x.id === params.id);
+  if (i < 0) fail(404, 'Attēls nav atrasts.');
+  const [g] = db.gallery.splice(i, 1);
+  save();
+  removeUploadsIfUnused([g.full, g.thumb, g.beforeFull, g.beforeThumb]);
+  return { ok: true };
+});
+
 /* ------------------------------------------------------------------ server */
 
 const MIME = {
@@ -904,7 +1024,24 @@ const MIME = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8'
 };
-const PAGES = { '/': 'index.html', '/pieteikties': 'pieteikties.html', '/pieslegties': 'pieslegties.html', '/konts': 'konts.html', '/admin': 'admin.html' };
+const PAGES = { '/': 'index.html', '/galerija': 'galerija.html', '/pieteikties': 'pieteikties.html', '/pieslegties': 'pieslegties.html', '/konts': 'konts.html', '/admin': 'admin.html' };
+
+function serveUpload(req, res, name) {
+  if (!UPLOAD_NAME_RE.test(name)) { res.writeHead(404); return res.end(); }
+  const file = path.join(UPLOAD_DIR, name);
+  fs.stat(file, (err, st) => {
+    if (err || !st || !st.isFile()) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, {
+      'Content-Type': MIME[path.extname(name)] || 'application/octet-stream', 'Content-Length': st.size,
+      'Cache-Control': 'public, max-age=31536000, immutable', // faila nosaukums ir unikāls — saturs nekad nemainās
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+    });
+    if (req.method === 'HEAD') return res.end();
+    const stream = fs.createReadStream(file);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+  });
+}
 
 function serveStatic(req, res, pathname) {
   const rel = PAGES[pathname.replace(/\/$/, '') || '/'] || pathname.replace(/^\/+/, '');
@@ -931,6 +1068,17 @@ function serveStatic(req, res, pathname) {
     const stream = fs.createReadStream(file);
     stream.on('error', () => res.destroy());
     stream.pipe(res);
+  });
+}
+
+function readRaw(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    const max = typeof limit === 'number' ? limit : 8e6;
+    if (Number(req.headers['content-length'] || 0) > max) { reject(new HttpError(413, 'Attēls ir pārāk liels.')); req.resume(); return; }
+    req.on('data', c => { size += c.length; if (size > max) { reject(new HttpError(413, 'Attēls ir pārāk liels.')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
   });
 }
 
@@ -965,6 +1113,7 @@ const server = http.createServer(async (req, res) => {
 
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
+    if (pathname.startsWith('/uploads/')) return serveUpload(req, res, pathname.slice(9));
     return serveStatic(req, res, pathname);
   }
 
@@ -977,13 +1126,15 @@ const server = http.createServer(async (req, res) => {
       if (m) { match = { r, params: Object.fromEntries(r.keys.map((k, i) => [k, m[i + 1]])) }; break; }
     }
     if (!match) fail(404, 'Nav atrasts.');
-    if (req.method !== 'GET' && !(req.headers['content-type'] || '').includes('application/json')) fail(415, 'Nepieciešams JSON.');
+    const ctype = String(req.headers['content-type'] || '').toLowerCase();
+    if (match.r.opts.raw) { if (!/^image\/(jpeg|png|webp)\b/.test(ctype)) fail(415, 'Atļauti tikai JPG, PNG vai WebP attēli.'); }
+    else if (req.method !== 'GET' && !ctype.includes('application/json')) fail(415, 'Nepieciešams JSON.');
     const user = sessionUser(req);
     const { access } = match.r;
     if (access && !user) fail(401, 'Lūdzu pieslēdzies.');
     if (access === 'admin' && user.role !== 'admin') fail(403, 'Nav piekļuves.');
     if (access === 'client' && user.role !== 'client') fail(403, 'Šī darbība pieejama tikai klientiem.');
-    const body = req.method === 'GET' ? {} : await readBody(req);
+    const body = req.method === 'GET' ? {} : match.r.opts.raw ? await readRaw(req, match.r.opts.raw) : await readBody(req);
     const out = await match.r.handler({ req, res, user, body, params: match.params, query: Object.fromEntries(url.searchParams) });
     if (out !== undefined) sendJson(200, out);
   } catch (e) {

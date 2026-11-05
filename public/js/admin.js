@@ -6,6 +6,7 @@
     ['pieraksti', 'Pieraksti', 'list', 'Saraksts'],
     ['klienti', 'Klienti', 'users', 'Klienti'],
     ['pakalpojumi', 'Pakalpojumi', 'tag', 'Cenas'],
+    ['galerija', 'Galerija', 'image', 'Darbi'],
     ['darba-laiks', 'Darba laiks', 'clock', 'Grafiks'],
     ['iestatijumi', 'Iestatījumi', 'settings', 'Opcijas']
   ];
@@ -56,7 +57,7 @@
     const found = SECTIONS.find(s => s[0] === sec) ? sec : 'parskats';
     $$('[data-sec]').forEach(a => a.classList.toggle('on', a.dataset.sec === found));
     window.scrollTo({ top: 0 });
-    ({ parskats: renderDashboard, kalendars: renderCalendar, pieraksti: renderList, klienti: renderClients, pakalpojumi: renderServices, 'darba-laiks': renderHours, iestatijumi: renderSettings })[found]();
+    ({ parskats: renderDashboard, kalendars: renderCalendar, pieraksti: renderList, klienti: renderClients, pakalpojumi: renderServices, galerija: renderGallery, 'darba-laiks': renderHours, iestatijumi: renderSettings })[found]();
   }
   addEventListener('hashchange', route);
 
@@ -627,7 +628,18 @@
           <label class="field"><span>Nosaukums</span><input class="input" name="salonName" value="${esc(s.salonName)}" required></label>
           <label class="field"><span>Tālrunis</span><input class="input" name="phone" value="${esc(s.phone)}"></label>
           <label class="field full"><span>Sauklis</span><input class="input" name="tagline" value="${esc(s.tagline)}"></label>
+          <div class="field full"><span>„Par mani” foto</span>
+            <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+              ${s.aboutPhoto ? `<img class="about-admin-photo" src="${esc(s.aboutPhoto)}" alt="Pašreizējais foto">` : '<span class="muted small">Foto netiek rādīts.</span>'}
+              <div style="display:grid;gap:8px">
+                <label class="btn btn-sm btn-line" style="position:relative;overflow:hidden">${icon('upload')}Mainīt foto<input type="file" accept="image/*" id="aboutPhotoIn" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>
+                ${s.aboutPhoto !== '/img/lasma.jpg' ? '<button type="button" class="btn btn-sm btn-ghost" id="aboutPhotoReset">Atjaunot sākotnējo</button>' : ''}
+                ${s.aboutPhoto ? '<button type="button" class="btn btn-sm btn-ghost" id="aboutPhotoHide">Nerādīt foto</button>' : ''}
+              </div></div></div>
+          <label class="field"><span>Vārds („Es esmu …”)</span><input class="input" name="ownerName" maxlength="60" value="${esc(s.ownerName || '')}"></label>
+          <label class="field"><span>Apakšvirsraksts</span><input class="input" name="ownerTitle" maxlength="60" value="${esc(s.ownerTitle || '')}" placeholder="Tava friziere"></label>
           <label class="field full"><span>Par mani</span><textarea class="input" name="about" rows="4">${esc(s.about)}</textarea></label>
+          <label class="field full"><span>Citāts</span><input class="input" name="aboutQuote" maxlength="120" value="${esc(s.aboutQuote || '')}" placeholder="Tavi mati — mana aizraušanās!"></label>
           <label class="field full"><span>Adrese</span><input class="input" name="address" value="${esc(s.address)}"></label>
           <label class="field"><span>E-pasts</span><input class="input" name="email" type="email" value="${esc(s.email)}"></label>
           <label class="field"><span>Instagram</span><input class="input" name="instagram" placeholder="lietotajvards" value="${esc(s.instagram)}"></label>
@@ -656,6 +668,18 @@
         </div></section>
       <section class="glass card span-12" id="smsCard"></section></div>`;
     renderSmsCard();
+    const setAboutPhoto = async url => {
+      try { settings = (await API.put('/api/admin/settings', { aboutPhoto: url })).settings; toast('Foto atjaunināts.'); renderSettings(); }
+      catch (x) { toast(x.message, 'error'); }
+    };
+    $('#aboutPhotoIn').addEventListener('change', async e => {
+      const f = e.target.files[0]; if (!f) return;
+      const lbl = e.target.closest('label'); lbl.style.opacity = .6;
+      try { const img = await prepareImage(f, 1400); const up = await uploadImage(img.blob); await setAboutPhoto(up.url); }
+      catch (x) { toast(x.message, 'error'); lbl.style.opacity = 1; }
+    });
+    if ($('#aboutPhotoReset')) $('#aboutPhotoReset').addEventListener('click', () => setAboutPhoto('/img/lasma.jpg'));
+    if ($('#aboutPhotoHide')) $('#aboutPhotoHide').addEventListener('click', () => setAboutPhoto(''));
     $('#infoForm').addEventListener('submit', async e => {
       e.preventDefault();
       await withBusy(e.submitter, async () => {
@@ -674,6 +698,143 @@
         try { me = (await API.post('/api/password', formData(e.target))).user; renderMe(); e.target.current.value = ''; e.target.next.value = ''; toast('Pieejas dati atjaunoti.'); } catch (x) { toast(x.message, 'error'); }
       });
     });
+  }
+
+  /* ----------------------------------------------------------- ATTĒLI */
+  // Samazina attēlu pārlūkā (līdz max px garākajā malā) un pārkodē JPG — tas arī noņem GPS un citus metadatus.
+  async function prepareImage(file, max) {
+    if (file.size > 40e6) throw new Error('Fails ir pārāk liels (virs 40 MB).');
+    let src;
+    try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch {
+      src = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('Šo attēla formātu pārlūks nevar atvērt (piem., HEIC). Saglabā to kā JPG un mēģini vēlreiz.')); im.src = URL.createObjectURL(file); });
+    }
+    const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+    const k = Math.min(1, max / Math.max(w0, h0));
+    const w = Math.round(w0 * k), h = Math.round(h0 * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingQuality = 'high'; ctx.drawImage(src, 0, 0, w, h);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .86));
+    if (!blob) throw new Error('Neizdevās apstrādāt attēlu.');
+    return { blob, w, h };
+  }
+  async function uploadImage(blob) {
+    const r = await fetch('/api/admin/uploads', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob, credentials: 'same-origin' });
+    let j = null; try { j = await r.json(); } catch { /* */ }
+    if (!r.ok) throw new Error((j && j.error) || 'Augšupielāde neizdevās.');
+    return j;
+  }
+  async function uploadBoth(file) { // pilnais izmērs + sīktēls
+    const full = await prepareImage(file, 1800), thumb = await prepareImage(file, 700);
+    const [a, b] = await Promise.all([uploadImage(full.blob), uploadImage(thumb.blob)]);
+    return { full: a.url, thumb: b.url, w: full.w, h: full.h };
+  }
+
+  /* ----------------------------------------------------------- GALERIJA */
+  let galMode = 'single';
+  async function renderGallery() {
+    let items = [];
+    try { items = (await API.get('/api/admin/gallery')).items; } catch (e) { return toast(e.message, 'error'); }
+    const cats = [...new Set([...items.map(i => i.category).filter(Boolean), ...services.map(s => s.name)])];
+    const drop = (id, label) => `<label class="drop" id="${id}"><span class="lbl chip">${label}</span>${icon('upload')}<span><b>Izvēlies bildi</b><br><span class="small muted">vai ievelc to šeit</span></span><input type="file" accept="image/*"></label>`;
+    view.innerHTML = pageHead('Mani darbi', 'Galerija', `<a class="btn btn-line" href="/galerija" target="_blank" rel="noopener">${icon('eye')}Skatīt galeriju</a>`) + `
+      <div class="dash-grid">
+        <section class="glass card span-5"><div class="card-head"><div><h3>Pievienot darbu</h3><p class="muted small">Bildes tiek samazinātas un no tām tiek noņemti metadati (piem., atrašanās vieta).</p></div></div>
+          <div class="seg" id="galMode" style="margin-bottom:16px"><button type="button" data-m="single" class="${galMode === 'single' ? 'on' : ''}">Viena bilde</button><button type="button" data-m="pair" class="${galMode === 'pair' ? 'on' : ''}">Pirms un pēc</button></div>
+          <form id="galForm" style="display:grid;gap:14px">
+            <div style="display:grid;grid-template-columns:${galMode === 'pair' ? '1fr 1fr' : '1fr'};gap:12px">
+              ${galMode === 'pair' ? drop('dropBefore', 'Pirms') + drop('dropAfter', 'Pēc') : drop('dropMain', 'Bilde')}
+            </div>
+            <label class="field"><span>Apraksts <span class="muted">(nav obligāts)</span></span><input class="input" name="caption" maxlength="160" placeholder="Piem., Balayage gariem matiem"></label>
+            <label class="field"><span>Kategorija <span class="muted">(filtram galerijā)</span></span><input class="input" name="category" maxlength="40" list="galCats" placeholder="Piem., Krāsošana"></label>
+            <datalist id="galCats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+            <label class="switch"><input type="checkbox" name="visible" checked><span class="track"></span>Rādīt galerijā uzreiz</label>
+            <button class="btn btn-accent" type="submit">${icon('upload')}Augšupielādēt</button>
+          </form></section>
+        <section class="glass card span-7"><div class="card-head"><div><h3>Galerijā (${items.length})</h3><p class="muted small">Secību maini ar bultiņām — pirmās 4 redzamas sākumlapā.</p></div></div>
+          ${items.length ? `<div class="adm-gallery">${items.map((it, i) => `
+            <div class="adm-g ${it.visible ? '' : 'hidden-item'}" data-id="${esc(it.id)}">
+              <div class="media ${it.type === 'pair' ? 'split' : ''}">${it.type === 'pair' ? `<img src="${esc(it.beforeThumb)}" alt="Pirms"><img src="${esc(it.thumb)}" alt="Pēc">` : `<img src="${esc(it.thumb)}" alt="">`}</div>
+              <div class="body">
+                <b>${esc(it.caption || (it.type === 'pair' ? 'Pirms / pēc' : 'Bez apraksta'))}</b>
+                <span class="small muted">${[it.category, it.type === 'pair' ? 'pirms / pēc' : '', it.visible ? '' : 'paslēpts'].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</span>
+                <div class="acts">
+                  <button class="icon-btn" data-up="${i}" ${i === 0 ? 'disabled style="opacity:.35"' : ''} aria-label="Pārvietot uz priekšu" title="Uz priekšu">${icon('arrowUp')}</button>
+                  <button class="icon-btn" data-down="${i}" ${i === items.length - 1 ? 'disabled style="opacity:.35"' : ''} aria-label="Pārvietot atpakaļ" title="Atpakaļ">${icon('arrowDown')}</button>
+                  <button class="icon-btn" data-edit="${esc(it.id)}" aria-label="Labot" title="Labot">${icon('edit')}</button>
+                  <button class="icon-btn" data-vis="${esc(it.id)}" aria-label="${it.visible ? 'Paslēpt' : 'Rādīt'}" title="${it.visible ? 'Paslēpt' : 'Rādīt'}">${icon(it.visible ? 'eyeOff' : 'eye')}</button>
+                  <button class="icon-btn" data-del="${esc(it.id)}" aria-label="Dzēst" title="Dzēst" style="color:var(--bad)">${icon('trash')}</button>
+                </div></div></div>`).join('')}</div>`
+            : `<div class="empty">${icon('image')}<p>Galerija vēl ir tukša.<br>Pievieno pirmo darbu — tas parādīsies arī sākumlapā.</p></div>`}
+        </section></div>`;
+
+    $$('#galMode button').forEach(b => b.addEventListener('click', () => { galMode = b.dataset.m; renderGallery(); }));
+    const files = {};
+    $$('#galForm .drop').forEach(d => {
+      const inp = $('input', d);
+      const setFile = f => {
+        if (!f) return;
+        files[d.id] = f;
+        let img = $('img.prev', d); if (!img) { img = document.createElement('img'); img.className = 'prev'; img.alt = ''; d.insertBefore(img, inp); }
+        img.src = URL.createObjectURL(f);
+      };
+      inp.addEventListener('change', () => setFile(inp.files[0]));
+      d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+      d.addEventListener('dragleave', () => d.classList.remove('over'));
+      d.addEventListener('drop', e => { e.preventDefault(); d.classList.remove('over'); setFile(e.dataTransfer.files[0]); });
+    });
+    $('#galForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const v = formData(e.target);
+      const need = galMode === 'pair' ? ['dropBefore', 'dropAfter'] : ['dropMain'];
+      if (need.some(k => !files[k])) return toast(galMode === 'pair' ? 'Izvēlies abas bildes — pirms un pēc.' : 'Izvēlies bildi.', 'error');
+      await withBusy(e.submitter, async () => {
+        try {
+          let payload;
+          if (galMode === 'pair') {
+            const [b, a] = await Promise.all([uploadBoth(files.dropBefore), uploadBoth(files.dropAfter)]);
+            payload = { type: 'pair', full: a.full, thumb: a.thumb, w: a.w, h: a.h, beforeFull: b.full, beforeThumb: b.thumb };
+          } else {
+            const a = await uploadBoth(files.dropMain);
+            payload = { type: 'single', full: a.full, thumb: a.thumb, w: a.w, h: a.h };
+          }
+          await API.post('/api/admin/gallery', { ...payload, caption: v.caption, category: v.category, visible: v.visible });
+          toast('Darbs pievienots galerijai.');
+          renderGallery();
+        } catch (x) { toast(x.message, 'error'); }
+      });
+    });
+    const move = async (i, d) => {
+      const ids = items.map(x => x.id); const j = i + d;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      try { await API.post('/api/admin/gallery/order', { ids }); renderGallery(); } catch (x) { toast(x.message, 'error'); }
+    };
+    $$('[data-up]').forEach(b => b.addEventListener('click', () => move(+b.dataset.up, -1)));
+    $$('[data-down]').forEach(b => b.addEventListener('click', () => move(+b.dataset.down, 1)));
+    $$('[data-vis]').forEach(b => b.addEventListener('click', async () => {
+      const it = items.find(x => x.id === b.dataset.vis);
+      try { await API.put(`/api/admin/gallery/${it.id}`, { visible: !it.visible }); renderGallery(); } catch (x) { toast(x.message, 'error'); }
+    }));
+    $$('[data-del]').forEach(b => b.addEventListener('click', async () => {
+      if (!await confirmDialog('Bilde tiks neatgriezeniski dzēsta no galerijas.', { title: 'Dzēst darbu?', ok: 'Dzēst', danger: true })) return;
+      try { await API.del(`/api/admin/gallery/${b.dataset.del}`); toast('Dzēsts.'); renderGallery(); } catch (x) { toast(x.message, 'error'); }
+    }));
+    $$('[data-edit]').forEach(b => b.addEventListener('click', () => {
+      const it = items.find(x => x.id === b.dataset.edit);
+      const { el, close } = openModal({
+        title: 'Labot darbu',
+        body: `<form class="form-grid" id="galEdit">
+          <label class="field full"><span>Apraksts</span><input class="input" name="caption" maxlength="160" value="${esc(it.caption)}"></label>
+          <label class="field full"><span>Kategorija</span><input class="input" name="category" maxlength="40" list="galCats2" value="${esc(it.category)}"></label>
+          <datalist id="galCats2">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+          <label class="switch full"><input type="checkbox" name="visible" ${it.visible ? 'checked' : ''}><span class="track"></span>Rādīt galerijā</label></form>`,
+        foot: `<button class="btn btn-line" data-close>Atcelt</button><button class="btn" id="galSave">Saglabāt</button>`
+      });
+      $('#galSave', el).addEventListener('click', e => withBusy(e.currentTarget, async () => {
+        try { await API.put(`/api/admin/gallery/${it.id}`, formData($('#galEdit', el))); toast('Saglabāts.'); close(); renderGallery(); } catch (x) { toast(x.message, 'error'); }
+      }));
+    }));
   }
 
   /* ----------------------------------------------------------- SMS PAZIŅOJUMI */
