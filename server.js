@@ -7,6 +7,7 @@ const path = require('path');
 const store = require('./lib/store');
 const U = require('./lib/util');
 const crypto = require('crypto');
+const SMS = require('./lib/sms');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -111,6 +112,69 @@ function publicInfo() {
     closures: db.closures.filter(c => c.date >= U.today()).map(({ date, reason }) => ({ date, reason }))
   };
 }
+
+/* ------------------------------------------------------------------ SMS paziņojumi */
+const sms = SMS.createSms({ getDb: () => db, save: () => save() });
+const SMS_DAYS = ['svētd.', 'pirmd.', 'otrd.', 'trešd.', 'ceturtd.', 'piektd.', 'sestd.'];
+const smsWhen = (date, start) => { const d = U.parseDate(date); return `${SMS_DAYS[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. plkst. ${start}`; };
+const cut = (v, n) => { const t = String(v || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+const bookingClient = b => {
+  const u = b.userId ? getUser(b.userId) : null;
+  return { name: u ? u.name : (b.guestName || 'Klients'), phone: u ? u.phone : (b.guestPhone || '') };
+};
+const SMS_TEXT = {
+  confirm: (S, b) => `${S.salonName}: vizīte apstiprināta — ${cut(b.serviceName, 40)}, ${smsWhen(b.date, b.start)}.${S.address ? ' ' + cut(S.address, 40) + '.' : ''} Izmaiņām: ${S.phone}`,
+  change: (S, b) => `${S.salonName}: vizīte pārcelta uz ${smsWhen(b.date, b.start)} (${cut(b.serviceName, 40)}). Izmaiņām: ${S.phone}`,
+  cancel: (S, b) => `${S.salonName}: vizīte ${smsWhen(b.date, b.start)} ir atcelta.${CANONICAL_HOST ? ' Jauns pieraksts: ' + CANONICAL_HOST : ' Info: ' + S.phone}`,
+  reminder: (S, b) => {
+    const t = U.today(), rel = b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
+    return `${S.salonName}: atgādinām par vizīti ${rel} plkst. ${b.start} — ${cut(b.serviceName, 40)}.${S.address ? ' ' + cut(S.address, 40) + '.' : ''} Ja nevarat ierasties, zvaniet ${S.phone}`;
+  },
+  ownerNew: (S, b, c) => `Jauns pieraksts: ${cut(c.name, 30)}, ${c.phone} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}${b.createdBy === 'guest' ? ' (bez konta)' : ''}${b.note ? '. Kom.: ' + cut(b.note, 60) : ''}`,
+  ownerChange: (S, b, c, old) => `Pārcelts: ${cut(c.name, 30)} — ${cut(b.serviceName, 35)}, no ${smsWhen(old.date, old.start)} uz ${smsWhen(b.date, b.start)}`,
+  ownerCancel: (S, b, c) => `Atcelts: ${cut(c.name, 30)}, ${c.phone} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}`
+};
+// by: 'guest' | 'client' | 'admin'. Klientu darbības paziņo salonam; klientam — apstiprinājumi (arī par admina izmaiņām, ja ieslēgts).
+function notifyBooking(event, b, by, old) {
+  try {
+    if (!sms.enabled()) return;
+    const c = sms.cfg(), S = db.settings, cl = bookingClient(b);
+    const toClient = by !== 'admin' || c.client.onAdminChanges;
+    if (event === 'new') {
+      if (c.client.confirm && toClient) sms.enqueue(cl.phone, SMS_TEXT.confirm(S, b), 'confirm', b.id);
+      if (c.owner.onNew && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerNew(S, b, cl), 'owner-new', b.id);
+    } else if (event === 'change') {
+      if (c.client.change && toClient) sms.enqueue(cl.phone, SMS_TEXT.change(S, b), 'change', b.id);
+      if (c.owner.onChange && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerChange(S, b, cl, old), 'owner-change', b.id);
+    } else if (event === 'cancel') {
+      if (c.client.cancel && toClient) sms.enqueue(cl.phone, SMS_TEXT.cancel(S, b), 'cancel', b.id);
+      if (c.owner.onCancel && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerCancel(S, b, cl), 'owner-cancel', b.id);
+    }
+  } catch (e) { console.error('SMS paziņojuma kļūda:', e.message); }
+}
+// atgādinājumi: pārbauda ik pēc 5 min; nesūta naktī (21:00–8:00) un, ja pieraksts izveidots/mainīts pēdējo 3 h laikā
+function runReminders() {
+  try {
+    if (!sms.enabled()) return;
+    const c = sms.cfg();
+    if (!c.client.reminder) return;
+    const hour = new Date().getHours();
+    if (hour < 8 || hour >= 21) return;
+    const now = Date.now(), win = num(c.client.reminderHours, 1, 72, 24) * 3600e3;
+    let changed = false;
+    for (const b of db.bookings) {
+      if (b.status !== 'booked' || b.reminderSentAt) continue;
+      const left = U.ts(b.date, U.toMin(b.start)) - now;
+      if (left > win || left < 60 * 60e3) continue;
+      b.reminderSentAt = new Date().toISOString(); changed = true;
+      if (now - Date.parse(b.updatedAt || b.createdAt) < 3 * 3600e3) { b.reminderSkipped = 'nesen apstiprināts'; continue; }
+      sms.enqueue(bookingClient(b).phone, SMS_TEXT.reminder(db.settings, b), 'reminder', b.id);
+    }
+    if (changed) save();
+  } catch (e) { console.error('Atgādinājumu kļūda:', e.message); }
+}
+setInterval(runReminders, 5 * 60e3).unref();
+setTimeout(runReminders, 20e3).unref();
 
 /* ------------------------------------------------------------------ auth */
 
@@ -409,6 +473,7 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   if (lastHour >= 20) fail(429, `Tiešsaistes pieteikšanās īslaicīgi nav pieejama. Lūdzu zvani: ${S.phone}`);
 
   const b = createBooking({ user: null, service: svc, date: body.date, start: body.start, note: body.note, by: 'guest', guestName: name, guestPhone: phone });
+  notifyBooking('new', b, 'guest');
   hit('guest:' + ip, 3, 3600e3);
   hit('guestday:' + ip, 6, 24 * 3600e3);
   // vienreizēja atslēga, ar kuru tūlīt pēc pieteikuma var izveidot kontu un piesaistīt šo pierakstu
@@ -466,7 +531,9 @@ route('GET', '/api/my/bookings', 'client', ({ user }) => ({
 route('POST', '/api/my/bookings', 'client', ({ user, body }) => {
   const svc = getService(body.serviceId);
   if (!svc || !svc.active) fail(404, 'Pakalpojums nav pieejams.');
-  return { booking: bookingView(createBooking({ user, service: svc, date: body.date, start: body.start, note: body.note, by: 'client' })) };
+  const b = createBooking({ user, service: svc, date: body.date, start: body.start, note: body.note, by: 'client' });
+  notifyBooking('new', b, 'client');
+  return { booking: bookingView(b) };
 });
 
 route('PUT', '/api/my/bookings/:id', 'client', ({ user, body, params }) => {
@@ -475,9 +542,12 @@ route('PUT', '/api/my/bookings/:id', 'client', ({ user, body, params }) => {
   const svc = getService(b.serviceId);
   const dur = U.toMin(b.end) - U.toMin(b.start);
   if (!computeSlots(body.date, svc ? svc.duration : dur, b.id).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
+  const old = { date: b.date, start: b.start };
   b.date = body.date; b.start = body.start; b.end = U.fromMin(U.toMin(body.start) + (svc ? svc.duration : dur));
   b.updatedAt = new Date().toISOString(); b.rescheduled = (b.rescheduled || 0) + 1;
+  delete b.reminderSentAt; delete b.reminderSkipped;
   save();
+  notifyBooking('change', b, 'client', old);
   return { booking: bookingView(b) };
 });
 
@@ -486,6 +556,7 @@ route('POST', '/api/my/bookings/:id/cancel', 'client', ({ user, params }) => {
   assertModifiable(b);
   b.status = 'cancelled'; b.cancelledBy = 'client'; b.updatedAt = new Date().toISOString();
   save();
+  notifyBooking('cancel', b, 'client');
   return { booking: bookingView(b) };
 });
 
@@ -541,6 +612,7 @@ route('POST', '/api/admin/bookings', 'admin', ({ body }) => {
   const duration = body.duration ? num(body.duration, 5, 720, svc.duration) : undefined;
   const b = createBooking({ user, service: svc, date: body.date, start: body.start, note: body.note, by: 'admin', guestName: body.guestName, guestPhone: body.guestPhone, force: !!body.force, price, duration });
   if (body.adminNote) { b.adminNote = clean(body.adminNote); save(); }
+  if (body.notify !== false) notifyBooking('new', b, 'admin');
   return { booking: bookingView(b, true) };
 });
 
@@ -573,8 +645,16 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
   if (moved && OCCUPYING.has(next.status) && !body.force && hasConflict(next.date, U.toMin(next.start), U.toMin(next.end), b.id))
     fail(409, 'Šis laiks pārklājas ar citu pierakstu.');
   next.updatedAt = new Date().toISOString();
+  const before = { date: b.date, start: b.start, status: b.status };
+  const timeChanged = next.date !== b.date || next.start !== b.start;
+  if (timeChanged) { delete next.reminderSentAt; delete next.reminderSkipped; }
   Object.assign(b, next);
+  if (timeChanged) { delete b.reminderSentAt; delete b.reminderSkipped; }
   save();
+  if (body.notify !== false) {
+    if (before.status === 'booked' && b.status === 'cancelled') notifyBooking('cancel', { ...b, date: before.date, start: before.start }, 'admin');
+    else if (b.status === 'booked' && before.status === 'booked' && timeChanged) notifyBooking('change', b, 'admin', before);
+  }
   return { booking: bookingView(b, true) };
 });
 
@@ -712,7 +792,12 @@ route('POST', '/api/admin/closures', 'admin', ({ body }) => {
 });
 route('DELETE', '/api/admin/closures/:id', 'admin', ({ params }) => { db.closures = db.closures.filter(c => c.id !== params.id); save(); return { ok: true }; });
 
-route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: db.settings, admin: publicUser(user) }));
+function settingsView() {
+  const c = sms.cfg();
+  const credsSet = Object.fromEntries(SMS.SECRET_KEYS.map(k => [k, !!c.creds[k]]));
+  return { ...db.settings, sms: { ...c, creds: undefined, credsSet } };
+}
+route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: settingsView(), admin: publicUser(user) }));
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
   const s = db.settings, b = body || {};
   for (const k of ['salonName', 'tagline', 'address', 'phone', 'email', 'instagram']) if (b[k] !== undefined) s[k] = clean(b[k], 200);
@@ -730,8 +815,45 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
   if (b.maxActiveBookings !== undefined) s.maxActiveBookings = num(b.maxActiveBookings, 1, 20, 3);
   if (b.allowRegistration !== undefined) s.allowRegistration = !!b.allowRegistration;
   if (b.allowGuestBooking !== undefined) s.allowGuestBooking = !!b.allowGuestBooking;
+  if (b.sms && typeof b.sms === 'object') {
+    const cur = sms.cfg(), x = b.sms, next = { ...cur, owner: { ...cur.owner }, client: { ...cur.client }, creds: { ...cur.creds } };
+    if (x.provider !== undefined) { if (x.provider !== '' && !SMS.PROVIDERS.includes(x.provider)) fail(400, 'Nezināms SMS pakalpojums.'); next.provider = x.provider; }
+    if (x.sender !== undefined) {
+      const snd = clean(x.sender, 20);
+      if (snd && !/^[A-Za-z0-9][A-Za-z0-9 .-]{0,10}$/.test(snd) && !/^\+?\d{6,15}$/.test(snd)) fail(400, 'Sūtītāja vārds: līdz 11 latīņu burtiem/cipariem (piem., LDStudio) vai tālruņa numurs.');
+      next.sender = snd;
+    }
+    if (x.ascii !== undefined) next.ascii = !!x.ascii;
+    if (x.ownerPhone !== undefined) {
+      const op = clean(x.ownerPhone, 40);
+      if (op && !SMS.toE164(op)) fail(400, 'Salona mobilajam jābūt derīgam mobilā tālruņa numuram (piem., +371 2xxxxxxx).');
+      next.ownerPhone = op;
+    }
+    for (const k of ['onNew', 'onChange', 'onCancel']) if (x.owner && x.owner[k] !== undefined) next.owner[k] = !!x.owner[k];
+    for (const k of ['confirm', 'change', 'cancel', 'reminder', 'onAdminChanges']) if (x.client && x.client[k] !== undefined) next.client[k] = !!x.client[k];
+    if (x.client && x.client.reminderHours !== undefined) next.client.reminderHours = num(x.client.reminderHours, 1, 72, 24);
+    if (x.clearCreds) next.creds = SMS.defaults().creds;
+    for (const k of SMS.SECRET_KEYS) if (x.creds && typeof x.creds[k] === 'string' && x.creds[k].trim()) next.creds[k] = clean(x.creds[k], 200);
+    s.sms = next;
+  }
   save();
-  return { settings: s };
+  return { settings: settingsView() };
+});
+
+route('POST', '/api/admin/sms/test', 'admin', async ({ body }) => {
+  if (!sms.enabled()) fail(400, 'Vispirms izvēlies SMS pakalpojumu un saglabā iestatījumus.');
+  const to = clean(body.to, 40) || sms.cfg().ownerPhone;
+  if (!to) fail(400, 'Ievadi tālruņa numuru, uz kuru sūtīt testa SMS.');
+  const r = await sms.sendNow(to, `${db.settings.salonName}: testa SMS no mājaslapas. Ja to saņēmāt, paziņojumi strādā.`);
+  if (!r.ok) fail(502, 'SMS netika nosūtīta: ' + r.error);
+  return { ok: true, segments: r.segments, text: r.text };
+});
+
+route('GET', '/api/admin/sms/log', 'admin', () => {
+  const list = Array.isArray(db.smsLog) ? db.smsLog : [];
+  const month = new Date().toISOString().slice(0, 7);
+  const thisMonth = list.filter(e => e.at.startsWith(month) && e.status === 'sent');
+  return { log: list.slice(-100).reverse(), month: { messages: thisMonth.length, segments: thisMonth.reduce((a, e) => a + (e.segments || 1), 0) } };
 });
 
 route('GET', '/api/admin/export/bookings.csv', 'admin', ({ res }) => {
@@ -748,7 +870,7 @@ route('GET', '/api/admin/export/bookings.csv', 'admin', ({ res }) => {
 });
 
 route('GET', '/api/admin/backup', 'admin', ({ res }) => {
-  const copy = { ...db, sessions: [] };
+  const copy = { ...db, sessions: [], settings: { ...db.settings, sms: db.settings.sms ? { ...db.settings.sms, creds: undefined } : undefined } };
   res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': `attachment; filename="frizetava-backup-${U.today()}.json"` });
   res.end(JSON.stringify(copy, null, 2));
   return undefined;

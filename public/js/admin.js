@@ -653,7 +653,9 @@
         <div style="display:grid;gap:10px">
           <a class="btn btn-line" href="/api/admin/backup">${icon('download')}Rezerves kopija (JSON)</a>
           <a class="btn btn-line" href="/api/admin/export/bookings.csv">${icon('download')}Pieraksti Excel formātā (CSV)</a>
-        </div></section></div>`;
+        </div></section>
+      <section class="glass card span-12" id="smsCard"></section></div>`;
+    renderSmsCard();
     $('#infoForm').addEventListener('submit', async e => {
       e.preventDefault();
       await withBusy(e.submitter, async () => {
@@ -672,6 +674,90 @@
         try { me = (await API.post('/api/password', formData(e.target))).user; renderMe(); e.target.current.value = ''; e.target.next.value = ''; toast('Pieejas dati atjaunoti.'); } catch (x) { toast(x.message, 'error'); }
       });
     });
+  }
+
+  /* ----------------------------------------------------------- SMS PAZIŅOJUMI */
+  const SMS_TYPES = { confirm: 'Apstiprinājums klientam', change: 'Pārcelšana klientam', cancel: 'Atcelšana klientam', reminder: 'Atgādinājums klientam',
+    'owner-new': 'Jauns pieraksts (tev)', 'owner-change': 'Pārcelts (tev)', 'owner-cancel': 'Atcelts (tev)', test: 'Testa SMS' };
+  const SMS_STATUS = { sent: ['completed', 'Nosūtīta'], test: ['booked', 'Testa režīms'], failed: ['noshow', 'Kļūda'], skipped: ['cancelled', 'Izlaista'] };
+
+  async function renderSmsCard() {
+    const box = $('#smsCard'); if (!box) return;
+    const c = settings.sms || {}, cs = c.credsSet || {}, o = c.owner || {}, cl = c.client || {};
+    let logData = { log: [], month: { messages: 0, segments: 0 } };
+    try { logData = await API.get('/api/admin/sms/log'); } catch { /* */ }
+    const state = !c.provider ? ['cancelled', 'Izslēgti'] : c.provider === 'log' ? ['booked', 'Testa režīms — SMS netiek sūtītas'] : ['completed', 'Ieslēgti'];
+    const chk = (name, on, label) => `<label class="switch"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span class="track"></span>${label}</label>`;
+    const secret = (name, set, label, ph) => `<label class="field"><span>${label}</span><input class="input" type="password" name="${name}" autocomplete="off" placeholder="${set ? '•••••• saglabāts — atstāj tukšu, lai nemainītu' : esc(ph)}"></label>`;
+    box.innerHTML = `
+      <div class="card-head"><div><h3>SMS paziņojumi</h3><p class="muted small">Apstiprinājumi un atgādinājumi klientiem, paziņojumi tev par jauniem, pārceltiem un atceltiem pierakstiem.</p></div>
+        <span class="badge ${state[0]}">${state[1]}</span></div>
+      <form id="smsForm" class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))" autocomplete="off">
+        <label class="field"><span>SMS pakalpojums</span><select class="input" name="provider">
+          <option value="" ${!c.provider ? 'selected' : ''}>Izslēgts</option>
+          <option value="twilio" ${c.provider === 'twilio' ? 'selected' : ''}>Twilio</option>
+          <option value="smsapi" ${c.provider === 'smsapi' ? 'selected' : ''}>SMSAPI</option>
+          <option value="log" ${c.provider === 'log' ? 'selected' : ''}>Testa režīms (nesūta, tikai žurnālā)</option></select></label>
+        <label class="field"><span>Sūtītāja vārds</span><input class="input" name="sender" maxlength="15" value="${esc(c.sender || '')}" placeholder="LDStudio"></label>
+        <label class="field"><span>Tavs mobilais (paziņojumiem tev)</span><input class="input" name="ownerPhone" type="tel" value="${esc(c.ownerPhone || '')}" placeholder="+371 2…"></label>
+        <div class="full prov prov-twilio" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+          ${secret('twilioSid', cs.twilioSid, 'Twilio Account SID', 'AC…')}${secret('twilioToken', cs.twilioToken, 'Twilio Auth Token', '')}</div>
+        <div class="full prov prov-smsapi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+          ${secret('smsapiToken', cs.smsapiToken, 'SMSAPI OAuth tokens', '')}</div>
+        <div class="field"><span>Tev (frizierei)</span><div style="display:grid;gap:8px">
+          ${chk('o_onNew', o.onNew, 'Jauns pieraksts')}${chk('o_onChange', o.onChange, 'Klients pārcēla')}${chk('o_onCancel', o.onCancel, 'Klients atcēla')}</div></div>
+        <div class="field"><span>Klientam</span><div style="display:grid;gap:8px">
+          ${chk('c_confirm', cl.confirm, 'Apstiprinājums pēc pieteikšanās')}${chk('c_change', cl.change, 'Paziņojums par pārcelšanu')}${chk('c_cancel', cl.cancel, 'Paziņojums par atcelšanu')}
+          ${chk('c_onAdminChanges', cl.onAdminChanges, 'Arī par manām izmaiņām admin panelī')}</div></div>
+        <div class="field"><span>Atgādinājums</span><div style="display:grid;gap:8px">
+          ${chk('c_reminder', cl.reminder, 'Sūtīt atgādinājumu pirms vizītes')}
+          <label style="display:flex;align-items:center;gap:8px;font-size:14px"><input class="input" type="number" name="reminderHours" min="1" max="72" value="${cl.reminderHours || 24}" style="width:84px;height:38px"> h pirms vizītes</label>
+          <span class="tiny muted">Naktī (21:00–8:00) atgādinājumi netiek sūtīti.</span></div></div>
+        <div class="field"><span>Teksts</span><div style="display:grid;gap:8px">${chk('ascii', c.ascii !== false, 'Bez garumzīmēm (1 SMS = 160 zīmes)')}
+          <span class="tiny muted">Ar garumzīmēm vienā SMS ietilpst tikai 70 zīmes — apstiprinājums aizņemtu 2–3 SMS.</span></div></div>
+        <div class="full" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <button class="btn" type="submit">Saglabāt SMS iestatījumus</button>
+          ${Object.values(cs).some(Boolean) ? '<button class="btn btn-sm btn-danger" type="button" id="smsClear">Dzēst saglabātās atslēgas</button>' : ''}
+        </div>
+      </form>
+      <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <label class="field" style="flex:1;min-width:200px"><span>Testa SMS uz numuru</span><input class="input" id="smsTestTo" type="tel" placeholder="${esc(c.ownerPhone || '+371 2…')}"></label>
+        <button class="btn btn-sage" type="button" id="smsTest">Sūtīt testa SMS</button>
+      </div>
+      <div class="card-head" style="margin:24px 0 8px"><h3 style="font-size:15px">Pēdējās SMS</h3><span class="muted small">Šomēnes nosūtītas: <b>${logData.month.messages}</b> (${logData.month.segments} SMS daļas)</span></div>
+      <div class="table-wrap" style="max-height:320px;overflow:auto">${logData.log.length ? `<table class="table"><thead><tr><th>Laiks</th><th>Veids</th><th>Numurs</th><th>Statuss</th><th>Piezīme</th></tr></thead><tbody>
+        ${logData.log.map(e => { const st = SMS_STATUS[e.status] || ['cancelled', e.status]; return `<tr><td style="white-space:nowrap">${fmt.dateShort(e.at.slice(0, 10))} ${new Date(e.at).toTimeString().slice(0, 5)}</td>
+          <td>${esc(SMS_TYPES[e.type] || e.type)}</td><td style="font-variant-numeric:tabular-nums">${esc(e.to || '')}</td><td><span class="badge ${st[0]}">${esc(st[1])}</span></td>
+          <td class="small muted" style="max-width:360px">${esc(e.error || e.text || (e.segments > 1 ? e.segments + ' SMS daļas' : ''))}</td></tr>`; }).join('')}</tbody></table>`
+        : '<p class="muted small">Vēl nav nosūtīta neviena SMS.</p>'}</div>`;
+
+    const f = $('#smsForm');
+    const syncProv = () => $$('.prov', box).forEach(el => el.classList.toggle('hidden', !el.classList.contains('prov-' + f.provider.value)));
+    syncProv(); f.provider.addEventListener('change', syncProv);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const v = formData(f);
+      const payload = { sms: {
+        provider: v.provider, sender: v.sender, ownerPhone: v.ownerPhone, ascii: v.ascii,
+        owner: { onNew: v.o_onNew, onChange: v.o_onChange, onCancel: v.o_onCancel },
+        client: { confirm: v.c_confirm, change: v.c_change, cancel: v.c_cancel, reminder: v.c_reminder, onAdminChanges: v.c_onAdminChanges, reminderHours: v.reminderHours },
+        creds: { twilioSid: v.twilioSid || '', twilioToken: v.twilioToken || '', smsapiToken: v.smsapiToken || '' } } };
+      await withBusy(e.submitter, async () => {
+        try { settings = (await API.put('/api/admin/settings', payload)).settings; toast('SMS iestatījumi saglabāti.'); renderSmsCard(); } catch (x) { toast(x.message, 'error'); }
+      });
+    });
+    if ($('#smsClear')) $('#smsClear').addEventListener('click', async () => {
+      if (!await confirmDialog('Dzēst saglabātās SMS pakalpojuma atslēgas? SMS netiks sūtītas, kamēr neievadīsi jaunas.', { title: 'Dzēst atslēgas?', ok: 'Dzēst', danger: true })) return;
+      try { settings = (await API.put('/api/admin/settings', { sms: { clearCreds: true } })).settings; toast('Atslēgas dzēstas.'); renderSmsCard(); } catch (x) { toast(x.message, 'error'); }
+    });
+    $('#smsTest').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+      try {
+        const r = await API.post('/api/admin/sms/test', { to: $('#smsTestTo').value });
+        toast(settings.sms && settings.sms.provider === 'log' ? 'Testa režīms: SMS ierakstīta žurnālā (netika sūtīta).' : 'Testa SMS nosūtīta.');
+        renderSmsCard();
+      } catch (x) { toast(x.message, 'error'); renderSmsCard(); }
+    }));
   }
 
   route();
