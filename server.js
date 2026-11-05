@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const SESSION_DAYS = 30;
+const CANONICAL_HOST = String(process.env.CANONICAL_HOST || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
 const db = store.load();
 const save = () => store.save();
 
@@ -800,6 +801,15 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'same-origin');
+  // www.ldstudio.lv ↔ ldstudio.lv: viena galvenā adrese (CANONICAL_HOST), otrs variants tiek pāradresēts
+  if (CANONICAL_HOST) {
+    const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+    const alt = CANONICAL_HOST.startsWith('www.') ? CANONICAL_HOST.slice(4) : 'www.' + CANONICAL_HOST;
+    if (host === alt) {
+      res.writeHead(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, { Location: `https://${CANONICAL_HOST}${req.url.startsWith('/') ? req.url : '/'}` });
+      return res.end();
+    }
+  }
   let url, pathname;
   try { url = new URL(req.url, 'http://localhost'); pathname = decodeURIComponent(url.pathname); } catch { pathname = null; }
   if (pathname == null || pathname.includes('\0')) { res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Nederīgs pieprasījums.'); }
