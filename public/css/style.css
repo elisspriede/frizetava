@@ -270,7 +270,7 @@ table.table { width: 100%; border-collapse: separate; border-spacing: 0; font-si
 .hours-list .today { color: var(--tertiary); font-weight: 700; }
 .hours-list .closed { opacity: .55; }
 
-.contact-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.contact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .contact { padding: 24px; display: flex; gap: 16px; align-items: center; text-decoration: none; transition: transform .25s var(--ease); }
 a.contact:hover { transform: translateY(-3px); }
 .contact .ic { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; background: var(--primary); color: var(--tertiary); flex: none; }
@@ -571,3 +571,19 @@ a.service { text-decoration: none; color: inherit; }
 .service .book svg { width: 15px; height: 15px; }
 a.service:hover .book, a.service:focus-visible .book { opacity: 1; transform: none; }
 @media (hover: none) { .service .book { opacity: 1; transform: none; } }
+
+/* --- WhatsApp poga --- */
+body.has-wa { padding-bottom: 84px; }
+.wa-fab { position: fixed; z-index: 60; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  display: inline-flex; align-items: center; gap: 10px; height: 58px; min-width: 58px; padding: 0 16px; border-radius: 999px;
+  background: #25D366; color: #fff; text-decoration: none; font-weight: 700; font-size: 14.5px;
+  box-shadow: 0 12px 30px -10px rgba(18, 140, 126, .65), 0 2px 6px rgba(0, 0, 0, .12); transition: transform .25s var(--ease), box-shadow .25s; }
+.wa-fab svg { width: 28px; height: 28px; flex: none; }
+.wa-fab:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 36px -10px rgba(18, 140, 126, .75), 0 2px 6px rgba(0, 0, 0, .12); }
+.wa-fab:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+.contact .ic.wa { background: #25D366; color: #fff; }
+.contact .ic.wa svg { width: 24px; height: 24px; }
+@media (max-width: 720px) {
+  .wa-fab { padding: 0; width: 56px; height: 56px; justify-content: center; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .wa-fab .wa-label { display: none; }
+}

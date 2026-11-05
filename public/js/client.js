@@ -13,6 +13,7 @@
 
   const S = info.settings;
   document.title = `Mans konts — ${S.salonName}`;
+  whatsappButton(S.whatsapp);
   $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(S.salonName)}</span>`;
   $('#logoutBtn').innerHTML = icon('logout');
   $('#logoutBtn').addEventListener('click', logout);

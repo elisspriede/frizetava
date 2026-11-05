@@ -104,7 +104,7 @@ function publicInfo() {
   return {
     settings: {
       salonName: s.salonName, tagline: s.tagline, about: s.about, address: s.address, phone: s.phone, email: s.email,
-      instagram: s.instagram, allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
+      instagram: s.instagram, whatsapp: s.whatsapp || '', allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
       bookingDaysAhead: s.bookingDaysAhead, maxActiveBookings: s.maxActiveBookings
     },
     hours: db.hours, services, nextFree,
@@ -716,6 +716,12 @@ route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: db.setti
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
   const s = db.settings, b = body || {};
   for (const k of ['salonName', 'tagline', 'address', 'phone', 'email', 'instagram']) if (b[k] !== undefined) s[k] = clean(b[k], 200);
+  if (b.whatsapp !== undefined) {
+    const wa = clean(b.whatsapp, 200);
+    // tikai WhatsApp saites (aizsardzība pret javascript: u.c. saitēm)
+    if (wa && !/^https:\/\/(wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/[^\s"'<>]*$/i.test(wa)) fail(400, 'WhatsApp saitei jāsākas ar https://wa.me/ (piem., https://wa.me/37120000000).');
+    s.whatsapp = wa;
+  }
   if (b.about !== undefined) s.about = clean(b.about, 2000);
   if (b.slotStep !== undefined) s.slotStep = [5, 10, 15, 20, 30, 60].includes(+b.slotStep) ? +b.slotStep : 15;
   if (b.minAdvanceHours !== undefined) s.minAdvanceHours = num(b.minAdvanceHours, 0, 168, 2);

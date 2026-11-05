@@ -198,6 +198,21 @@ function passwordToggle(root = document) {
   }));
 }
 
+/* ---------- WhatsApp poga ---------- */
+const WA_ICON = '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M16.04 3C8.9 3 3.1 8.78 3.1 15.9c0 2.28.6 4.5 1.73 6.46L3 29l6.83-1.79a12.9 12.9 0 0 0 6.2 1.58h.01c7.13 0 12.93-5.79 12.93-12.9C28.97 8.78 23.17 3 16.04 3Zm0 23.6h-.01a10.7 10.7 0 0 1-5.45-1.49l-.39-.23-4.05 1.06 1.08-3.95-.25-.4a10.65 10.65 0 0 1-1.64-5.69c0-5.9 4.81-10.7 10.72-10.7 5.9 0 10.71 4.8 10.71 10.7 0 5.9-4.81 10.7-10.72 10.7Zm5.88-8.02c-.32-.16-1.91-.94-2.2-1.05-.3-.1-.51-.16-.73.16-.21.32-.83 1.05-1.02 1.26-.19.21-.38.24-.7.08-.32-.16-1.36-.5-2.59-1.6-.96-.85-1.6-1.9-1.79-2.22-.19-.32-.02-.5.14-.65.14-.14.32-.38.48-.56.16-.19.21-.32.32-.54.1-.21.05-.4-.03-.56-.08-.16-.73-1.75-1-2.4-.26-.62-.53-.54-.73-.55h-.62c-.21 0-.56.08-.86.4-.3.32-1.12 1.1-1.12 2.68 0 1.58 1.15 3.1 1.31 3.32.16.21 2.27 3.46 5.5 4.85.77.33 1.37.53 1.84.68.77.24 1.47.21 2.03.13.62-.09 1.91-.78 2.18-1.53.27-.75.27-1.4.19-1.53-.08-.13-.29-.21-.61-.37Z"/></svg>';
+const isWhatsAppUrl = u => /^https:\/\/(wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\//i.test(String(u || ''));
+function whatsappButton(url) {
+  if (!isWhatsAppUrl(url) || $('.wa-fab')) return;
+  const a = document.createElement('a');
+  a.className = 'wa-fab';
+  a.href = url; a.target = '_blank'; a.rel = 'noopener';
+  a.setAttribute('aria-label', 'Rakstīt mums WhatsApp');
+  a.title = 'Rakstīt WhatsApp';
+  a.innerHTML = WA_ICON + '<span class="wa-label">Raksti mums</span>';
+  document.body.appendChild(a);
+  document.body.classList.add('has-wa'); // vieta lapas apakšā, lai poga neko neaizsedz
+}
+
 function genPassword(len = 10) {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const a = new Uint32Array(len); crypto.getRandomValues(a);

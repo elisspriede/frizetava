@@ -53,6 +53,8 @@
     const contacts = [];
     if (s.phone) contacts.push(`<a class="glass contact" href="tel:${esc(s.phone.replace(/\s/g, ''))}"><span class="ic">${icon('phone')}</span><span><small>Tālrunis</small><b>${esc(s.phone)}</b></span></a>`);
     if (s.address) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="https://maps.google.com/?q=${encodeURIComponent(s.address)}"><span class="ic">${icon('pin')}</span><span><small>Adrese</small><b>${esc(s.address)}</b></span></a>`);
+    if (isWhatsAppUrl(s.whatsapp)) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="${esc(s.whatsapp)}"><span class="ic wa">${WA_ICON}</span><span><small>WhatsApp</small><b>Raksti mums</b></span></a>`);
+    whatsappButton(s.whatsapp);
     if (s.instagram) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="https://instagram.com/${esc(s.instagram.replace(/^@/, ''))}"><span class="ic">${icon('insta')}</span><span><small>Instagram</small><b>@${esc(s.instagram.replace(/^@/, ''))}</b></span></a>`);
     else if (s.email) contacts.push(`<a class="glass contact" href="mailto:${esc(s.email)}"><span class="ic">${icon('mail')}</span><span><small>E-pasts</small><b>${esc(s.email)}</b></span></a>`);
     $('#contacts').innerHTML = contacts.join('');

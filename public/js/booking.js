@@ -13,6 +13,7 @@
   const phoneHref = S.phone ? `tel:${S.phone.replace(/[^\d+]/g, '')}` : '';
 
   document.title = `Pieteikties vizītei — ${S.salonName}`;
+  whatsappButton(S.whatsapp);
   $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(S.salonName)}</span>`;
   if (me && me.role === 'admin') { $('#loginLink').textContent = 'Admin panelis'; $('#loginLink').href = '/admin'; }
 
