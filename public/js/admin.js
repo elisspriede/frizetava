@@ -385,6 +385,7 @@
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
           ${b.clientPhone ? `<a class="btn btn-sm btn-ghost" href="tel:${esc(b.clientPhone.replace(/\s/g, ''))}">${icon('phone')}${esc(b.clientPhone)}</a>` : ''}
           ${client ? `<button type="button" class="btn btn-sm btn-ghost" id="openClient">${icon('user')}Klienta kartiņa</button>` : '<span class="chip">Klients bez konta</span>'}
+          ${b.createdBy === 'guest' ? '<span class="chip">Pieteikts tiešsaistē</span>' : b.createdBy === 'client' ? '<span class="chip">Pieteikts kontā</span>' : ''}
         </div>
         ${b.note ? `<div class="alert info" style="margin-bottom:16px"><b>Klienta komentārs:</b> ${esc(b.note)}</div>` : ''}
         <form class="form-grid">
@@ -638,6 +639,7 @@
           <label class="field"><span>Atcelt/pārcelt līdz (h)</span><input class="input" type="number" min="0" name="cancelHours" value="${s.cancelHours}"></label>
           <label class="field"><span>Pieraksts uz priekšu (dienas)</span><input class="input" type="number" min="1" name="bookingDaysAhead" value="${s.bookingDaysAhead}"></label>
           <label class="field full"><span>Maks. aktīvo pierakstu skaits klientam</span><input class="input" type="number" min="1" max="20" name="maxActiveBookings" value="${s.maxActiveBookings}"></label>
+          <label class="switch full"><input type="checkbox" name="allowGuestBooking" ${s.allowGuestBooking !== false ? 'checked' : ''}><span class="track"></span>Var pieteikties bez konta (vārds + tālrunis)</label>
           <label class="switch full"><input type="checkbox" name="allowRegistration" ${s.allowRegistration ? 'checked' : ''}><span class="track"></span>Klienti var paši izveidot kontu</label>
           <div class="full"><button class="btn" type="submit">Saglabāt noteikumus</button></div></form></section>
       <section class="glass card span-7"><div class="card-head"><div><h3>Administratora konts</h3><p class="muted small">Ar šiem datiem tu pieslēdzies admin panelim.</p></div></div>

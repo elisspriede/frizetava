@@ -561,3 +561,13 @@ footer.site { padding: 40px 0 50px; color: var(--muted); font-size: 13.5px; disp
 }
 .kpi.dark .delta.up { background: rgba(217, 201, 178, .18); color: #e9dfcd; }
 .kpi.dark .delta.down { background: rgba(201, 111, 79, .3); color: #f3c9b7; }
+
+/* --- kopīgā datuma/laika izvēle un pieteikšanās bez konta --- */
+.picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 26px; }
+.picker [data-slots] { scroll-margin-top: 96px; }
+.hp { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+a.service { text-decoration: none; color: inherit; }
+.service .book { font-size: 13px; font-weight: 600; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; opacity: 0; transform: translateX(-4px); transition: .25s var(--ease); }
+.service .book svg { width: 15px; height: 15px; }
+a.service:hover .book, a.service:focus-visible .book { opacity: 1; transform: none; }
+@media (hover: none) { .service .book { opacity: 1; transform: none; } }

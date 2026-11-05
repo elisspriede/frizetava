@@ -142,83 +142,20 @@
     }));
   }
 
-  async function loadDays() {
-    const q = new URLSearchParams({ serviceId: W.serviceId, month: W.month });
-    if (W.reschedule) q.set('exclude', W.reschedule.id);
-    W.days = (await API.get('/api/days?' + q)).days;
-  }
-
-  async function renderDateTime() {
+  function renderDateTime() {
     const body = $('#wbody');
-    body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px">
-      <div class="cal" id="cal"><div class="skeleton" style="height:300px"></div></div>
-      <div id="slots"></div></div>
+    const svc = svcById(W.serviceId) || { id: W.serviceId, name: W.reschedule?.serviceName || '', duration: W.reschedule ? toMin(W.reschedule.end) - toMin(W.reschedule.start) : 60 };
+    body.innerHTML = `<div id="picker"></div>
       <div class="modal-foot" style="justify-content:space-between">
         ${W.reschedule ? '<span></span>' : '<button class="btn btn-line" id="back">Atpakaļ</button>'}
         <button class="btn" id="next" ${W.start ? '' : 'disabled'}>Turpināt ${icon('arrowR')}</button></div>`;
     if ($('#back')) $('#back').addEventListener('click', () => { W.step = 1; renderWizard(); });
     $('#next').addEventListener('click', () => { W.step = 3; renderWizard(); });
-    try { await loadDays(); } catch (e) { return toast(e.message, 'error'); }
-    renderCalendar();
-    renderSlots();
-  }
-
-  function renderCalendar() {
-    const [y, m] = W.month.split('-').map(Number);
-    const first = new Date(y, m - 1, 1), lastDay = new Date(y, m, 0).getDate();
-    const lead = (first.getDay() + 6) % 7;
-    const t = todayStr();
-    const curMonth = t.slice(0, 7);
-    const maxMonth = addDays(t, S.bookingDaysAhead).slice(0, 7);
-    let cells = '';
-    for (let i = 0; i < lead; i++) cells += '<span></span>';
-    for (let d = 1; d <= lastDay; d++) {
-      const ds = `${W.month}-${pad(d)}`, n = W.days[ds] || 0;
-      const cls = ['cal-day', n ? 'avail' : 'off', n && n <= 3 ? 'few' : '', ds === t ? 'today' : '', ds === W.date ? 'on' : ''].join(' ');
-      cells += `<button class="${cls}" ${n ? `data-day="${ds}"` : 'disabled'} aria-label="${fmt.dateLong(ds)}${n ? `, ${n} brīvi laiki` : ', nav brīvu laiku'}">${d}</button>`;
-    }
-    $('#cal').innerHTML = `<div class="cal-head">
-        <button class="icon-btn" id="prevM" ${W.month <= curMonth ? 'disabled style="opacity:.35"' : ''} aria-label="Iepriekšējais mēnesis">${icon('chevL')}</button>
-        <b>${LV.months[m - 1]} ${y}</b>
-        <button class="icon-btn" id="nextM" ${W.month >= maxMonth ? 'disabled style="opacity:.35"' : ''} aria-label="Nākamais mēnesis">${icon('chevR')}</button></div>
-      <div class="cal-grid">${['P', 'O', 'T', 'C', 'Pk', 'S', 'Sv'].map(d => `<span class="wd">${d}</span>`).join('')}${cells}</div>
-      <div class="cal-legend"><span><i class="dot" style="background:var(--secondary);width:6px;height:6px"></i>Ir brīvi laiki</span><span><i class="dot" style="background:var(--accent);width:6px;height:6px"></i>Pēdējās vietas</span></div>`;
-    const shift = async k => {
-      const d = new Date(y, m - 1 + k, 1);
-      W.month = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-      $('#cal').style.opacity = .5;
-      await loadDays(); $('#cal').style.opacity = 1;
-      renderCalendar();
-    };
-    $('#prevM').addEventListener('click', () => shift(-1));
-    $('#nextM').addEventListener('click', () => shift(1));
-    $$('[data-day]').forEach(b => b.addEventListener('click', () => { W.date = b.dataset.day; W.start = null; renderCalendar(); renderSlots(); }));
-  }
-
-  async function renderSlots() {
-    const el = $('#slots');
-    const svc = svcById(W.serviceId);
-    if (!W.date) {
-      el.innerHTML = `<div class="empty" style="padding-top:60px">${icon('calendar')}<p>Izvēlies datumu kalendārā,<br>lai redzētu brīvos laikus.</p>
-        <p class="small" style="margin-top:12px">${esc(svc ? svc.name : '')} · ${svc ? fmt.dur(svc.duration) : ''}</p></div>`;
-      return;
-    }
-    el.innerHTML = '<div class="skeleton" style="height:200px"></div>';
-    const q = new URLSearchParams({ serviceId: W.serviceId, date: W.date });
-    if (W.reschedule) q.set('exclude', W.reschedule.id);
-    let slots = [];
-    try { slots = (await API.get('/api/slots?' + q)).slots; } catch (e) { toast(e.message, 'error'); }
-    const groups = [['Rīts', s => toMin(s) < 720], ['Diena', s => toMin(s) >= 720 && toMin(s) < 1020], ['Vakars', s => toMin(s) >= 1020]];
-    el.innerHTML = `<div style="margin-bottom:14px"><b style="font-size:16px">${fmt.dateLong(W.date)}</b><p class="muted small">${esc(svc.name)} · ${fmt.dur(svc.duration)}</p></div>` +
-      (slots.length ? groups.map(([label, f]) => {
-        const g = slots.filter(f);
-        return g.length ? `<div class="slot-group"><span class="label">${label}</span><div class="slots">${g.map(s => `<button class="slot ${s === W.start ? 'on' : ''}" data-slot="${s}">${s}</button>`).join('')}</div></div>` : '';
-      }).join('') : '<p class="muted">Šajā dienā brīvu laiku vairs nav.</p>');
-    $$('[data-slot]', el).forEach(b => b.addEventListener('click', () => {
-      W.start = b.dataset.slot;
-      $$('.slot', el).forEach(x => x.classList.toggle('on', x === b));
-      $('#next').disabled = false;
-    }));
+    createDateTimePicker($('#picker'), {
+      service: svc, daysAhead: S.bookingDaysAhead, excludeId: W.reschedule ? W.reschedule.id : null,
+      month: W.month, date: W.date, start: W.start,
+      onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; $('#next').disabled = !v.start; }
+    });
   }
 
   function renderConfirm() {

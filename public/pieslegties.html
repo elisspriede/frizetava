@@ -43,7 +43,7 @@
           </label>
           <div class="alert hidden" id="loginErr" role="alert"></div>
           <button class="btn btn-lg btn-block" type="submit">Pieslēgties</button>
-          <p class="small muted" style="text-align:center">Lietotājvārdu un paroli vari saņemt arī salonā.</p>
+          <p class="small muted" style="text-align:center" id="guestHint">Nav konta? <a href="/pieteikties" style="color:var(--accent);font-weight:600">Piesakies vizītei bez reģistrācijas →</a></p>
         </form>
 
         <form id="registerForm" class="hidden" autocomplete="on">
@@ -77,6 +77,7 @@
     $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(salon)}</span>`;
     document.title = `Pieslēgties — ${salon}`;
     const regAllowed = !info || info.settings.allowRegistration;
+    if (info && info.settings.allowGuestBooking === false) $('#guestHint').textContent = 'Lietotājvārdu un paroli vari saņemt arī salonā.';
 
     const setTab = tab => {
       $$('#seg button').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });

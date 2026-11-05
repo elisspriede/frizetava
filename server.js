@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const store = require('./lib/store');
 const U = require('./lib/util');
+const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -80,7 +81,7 @@ function bookingView(b, forAdmin = false) {
       userId: b.userId || null, guest: !u,
       clientName: u ? u.name : (b.guestName || 'Klients bez konta'),
       clientPhone: u ? u.phone : (b.guestPhone || ''),
-      adminNote: b.adminNote || '', cancelledBy: b.cancelledBy || null
+      adminNote: b.adminNote || '', cancelledBy: b.cancelledBy || null, createdBy: b.createdBy || null
     });
   }
   return v;
@@ -102,7 +103,7 @@ function publicInfo() {
   return {
     settings: {
       salonName: s.salonName, tagline: s.tagline, about: s.about, address: s.address, phone: s.phone, email: s.email,
-      instagram: s.instagram, allowRegistration: s.allowRegistration, cancelHours: s.cancelHours,
+      instagram: s.instagram, allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
       bookingDaysAhead: s.bookingDaysAhead, maxActiveBookings: s.maxActiveBookings
     },
     hours: db.hours, services, nextFree,
@@ -175,7 +176,9 @@ function createBooking({ user, service, date, start, note, by, guestName, guestP
   const dur = duration || service.duration;
   const s = U.toMin(start), e = s + dur;
   if (e > 24 * 60) fail(400, 'Vizīte nevar beigties pēc pusnakts.');
-  if (by === 'client') {
+  if (by === 'guest') {
+    if (!computeSlots(date, dur).includes(start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
+  } else if (by === 'client') {
     if (!computeSlots(date, dur).includes(start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
     const active = db.bookings.filter(b => b.userId === user.id && b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) > Date.now()).length;
     if (active >= db.settings.maxActiveBookings) fail(409, `Vienlaikus var būt ne vairāk kā ${db.settings.maxActiveBookings} aktīvi pieraksti.`);
@@ -336,26 +339,27 @@ route('POST', '/api/logout', null, ({ req, res }) => {
   return { ok: true };
 });
 
-// --- pieejamība (jebkurš pieslēdzies lietotājs)
-route('GET', '/api/slots', 'any', ({ query, user }) => {
+// --- pieejamība (publiska — vajadzīga arī pieteikšanās bez konta)
+const canExclude = (user, b) => !!user && !!b && (user.role === 'admin' || b.userId === user.id);
+route('GET', '/api/slots', null, ({ query, user }) => {
   const svc = getService(query.serviceId);
   if (!svc) fail(404, 'Pakalpojums nav atrasts.');
   let exclude;
   if (query.exclude) {
     const b = db.bookings.find(x => x.id === query.exclude);
-    if (b && (user.role === 'admin' || b.userId === user.id)) exclude = b.id;
+    if (canExclude(user, b)) exclude = b.id;
   }
   return { date: query.date, slots: computeSlots(query.date, svc.duration, exclude) };
 });
 
-route('GET', '/api/days', 'any', ({ query, user }) => {
+route('GET', '/api/days', null, ({ query, user }) => {
   const svc = getService(query.serviceId);
   if (!svc) fail(404, 'Pakalpojums nav atrasts.');
   if (!/^\d{4}-\d{2}$/.test(query.month || '')) fail(400, 'Nederīgs mēnesis.');
   let exclude;
   if (query.exclude) {
     const b = db.bookings.find(x => x.id === query.exclude);
-    if (b && (user.role === 'admin' || b.userId === user.id)) exclude = b.id;
+    if (canExclude(user, b)) exclude = b.id;
   }
   const [y, m] = query.month.split('-').map(Number);
   const days = {};
@@ -365,6 +369,67 @@ route('GET', '/api/days', 'any', ({ query, user }) => {
     days[ds] = computeSlots(ds, svc.duration, exclude).length;
   }
   return { days, closures: db.closures.filter(c => c.date.startsWith(query.month)) };
+});
+
+// --- pieteikšanās bez konta
+const digits = v => String(v || '').replace(/\D/g, '').replace(/^371(?=\d{8}$)/, '');
+const sha256 = v => crypto.createHash('sha256').update(String(v)).digest('hex');
+const CLAIM_HOURS = 2;
+
+route('POST', '/api/guest/bookings', null, ({ body, req }) => {
+  const S = db.settings;
+  if (S.allowGuestBooking === false) fail(403, `Pieteikšanās bez konta šobrīd nav pieejama. Lūdzu pieslēdzies vai zvani: ${S.phone}`);
+  if (clean(body.website)) fail(400, 'Nederīgi dati.'); // slazds robotiem (slēpts lauks)
+  const svc = getService(body.serviceId);
+  if (!svc || !svc.active) fail(404, 'Pakalpojums nav pieejams.');
+  const name = clean(body.name, 80), phone = clean(body.phone, 40);
+  if (name.length < 2) fail(400, 'Lūdzu ievadi savu vārdu.');
+  if (digits(phone).length < 8 || digits(phone).length > 15) fail(400, 'Lūdzu ievadi derīgu tālruņa numuru.');
+  if (!U.isDate(body.date) || !U.isTime(body.start)) fail(400, 'Lūdzu izvēlies datumu un laiku.');
+
+  // ierobežojumi pret surogātpieteikumiem
+  const ip = clientIp(req);
+  if (isLimited('guest:' + ip, 3) || isLimited('guestday:' + ip, 6)) fail(429, `Pārāk daudz pieteikumu no šīs ierīces. Lūdzu zvani: ${S.phone}`);
+  const now = Date.now();
+  const futureActive = b => b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) > now;
+  const samePhone = db.bookings.filter(b => futureActive(b) && digits(b.userId ? (getUser(b.userId) || {}).phone : b.guestPhone) === digits(phone)).length;
+  if (samePhone >= S.maxActiveBookings) fail(409, `Ar šo tālruņa numuru jau ir ${samePhone} aktīvi pieraksti. Lai pieteiktos vēl, lūdzu zvani: ${S.phone}`);
+  const lastHour = db.bookings.filter(b => b.createdBy === 'guest' && now - Date.parse(b.createdAt) < 3600e3).length;
+  if (lastHour >= 20) fail(429, `Tiešsaistes pieteikšanās īslaicīgi nav pieejama. Lūdzu zvani: ${S.phone}`);
+
+  const b = createBooking({ user: null, service: svc, date: body.date, start: body.start, note: body.note, by: 'guest', guestName: name, guestPhone: phone });
+  hit('guest:' + ip, 3, 3600e3);
+  hit('guestday:' + ip, 6, 24 * 3600e3);
+  // vienreizēja atslēga, ar kuru tūlīt pēc pieteikuma var izveidot kontu un piesaistīt šo pierakstu
+  const claimToken = U.token();
+  b.claimHash = sha256(claimToken);
+  b.claimExpires = now + CLAIM_HOURS * 3600e3;
+  save();
+  return { booking: bookingView(b), claimToken: S.allowRegistration ? claimToken : null, name, phone };
+});
+
+route('POST', '/api/guest/claim', null, ({ body, req, res }) => {
+  const ip = clientIp(req);
+  if (!hit('regtry:' + ip, 30, 3600e3)) fail(429, LIMIT_MSG);
+  if (!db.settings.allowRegistration) fail(403, 'Reģistrācija šobrīd ir slēgta. Pieeju vari saņemt salonā.');
+  const token = String(body.token || '');
+  const h = token.length === 64 ? sha256(token) : null;
+  const b = h && db.bookings.find(x => x.claimHash === h);
+  if (!b || !(b.claimExpires > Date.now()) || b.userId) fail(410, 'Šī iespēja vairs nav derīga. Kontu vari izveidot pieslēgšanās lapā.');
+  const username = clean(body.username, 64).toLowerCase();
+  validateUsername(username);
+  validatePassword(body.password);
+  if (!hit('reg:' + ip, 5, 3600e3)) fail(429, LIMIT_MSG);
+  const { salt, hash } = U.hashPassword(body.password);
+  const u = {
+    id: U.uid('usr'), role: 'client', username, name: b.guestName || 'Klients', phone: b.guestPhone || '', email: clean(body.email, 120),
+    salt, hash, active: true, notes: '', createdAt: new Date().toISOString(), selfRegistered: true
+  };
+  db.users.push(u);
+  b.userId = u.id;
+  delete b.guestName; delete b.guestPhone; delete b.claimHash; delete b.claimExpires;
+  startSession(res, u, req); // saglabā datubāzi
+  return { user: publicUser(u) };
 });
 
 // --- klients
@@ -643,6 +708,7 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
   if (b.bookingDaysAhead !== undefined) s.bookingDaysAhead = num(b.bookingDaysAhead, 1, 365, 60);
   if (b.maxActiveBookings !== undefined) s.maxActiveBookings = num(b.maxActiveBookings, 1, 20, 3);
   if (b.allowRegistration !== undefined) s.allowRegistration = !!b.allowRegistration;
+  if (b.allowGuestBooking !== undefined) s.allowGuestBooking = !!b.allowGuestBooking;
   save();
   return { settings: s };
 });
@@ -674,7 +740,7 @@ const MIME = {
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
   '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8'
 };
-const PAGES = { '/': 'index.html', '/pieslegties': 'pieslegties.html', '/konts': 'konts.html', '/admin': 'admin.html' };
+const PAGES = { '/': 'index.html', '/pieteikties': 'pieteikties.html', '/pieslegties': 'pieslegties.html', '/konts': 'konts.html', '/admin': 'admin.html' };
 
 function serveStatic(req, res, pathname) {
   const rel = PAGES[pathname.replace(/\/$/, '') || '/'] || pathname.replace(/^\/+/, '');

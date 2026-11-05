@@ -12,6 +12,9 @@
     $('#sig').textContent = '— ' + s.salonName;
     $('#copy').textContent = `© ${new Date().getFullYear()} ${s.salonName}`;
 
+    // pieteikšanās: klientam — savā kontā; pārējiem — bez konta (ja atļauts)
+    const bookHref = me.user && me.user.role === 'client' ? '/konts' : (s.allowGuestBooking === false ? '/pieslegties' : '/pieteikties');
+    $$('a[href="/pieteikties"]').forEach(a => { a.href = bookHref; });
     if (me.user) {
       const href = me.user.role === 'admin' ? '/admin' : '/konts';
       $('#navActions').innerHTML = `<a class="btn btn-sm" href="${href}">${me.user.role === 'admin' ? 'Admin panelis' : 'Mans konts'}</a>`;
@@ -30,12 +33,12 @@
     $('#todayHours').textContent = th && th.open && !closedToday ? `${th.start}–${th.end}` : 'Slēgts';
 
     $('#services').innerHTML = info.services.map((x, i) => `
-      <article class="glass service">
-        <div class="swatch" style="background:${esc(x.color)}">${icon(SVC_ICONS[i % SVC_ICONS.length])}</div>
+      <a class="glass service" href="${bookHref}${bookHref === '/pieteikties' ? '?pakalpojums=' + encodeURIComponent(x.id) : ''}" aria-label="Pieteikties: ${esc(x.name)}">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div class="swatch" style="background:${esc(x.color)}">${icon(SVC_ICONS[i % SVC_ICONS.length])}</div><span class="book">Pieteikties ${icon('arrowR')}</span></div>
         <h3>${esc(x.name)}</h3>
         <p>${esc(x.description || '')}</p>
         <div class="meta"><span class="price">${fmt.money(x.price)}</span><span class="dur">${icon('clock')}${fmt.dur(x.duration)}</span></div>
-      </article>`).join('') || '<p class="muted">Pakalpojumi drīzumā.</p>';
+      </a>`).join('') || '<p class="muted">Pakalpojumi drīzumā.</p>';
 
     const order = [1, 2, 3, 4, 5, 6, 0];
     $('#hours').innerHTML = order.map(d => {
