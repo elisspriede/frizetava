@@ -150,11 +150,12 @@
         ${W.reschedule ? '<span></span>' : '<button class="btn btn-line" id="back">Atpakaļ</button>'}
         <button class="btn" id="next" ${W.start ? '' : 'disabled'}>Turpināt ${icon('arrowR')}</button></div>`;
     if ($('#back')) $('#back').addEventListener('click', () => { W.step = 1; renderWizard(); });
-    $('#next').addEventListener('click', () => { W.step = 3; renderWizard(); });
+    $('#next').addEventListener('click', () => { if (W.start) { W.step = 3; renderWizard(); } });
     createDateTimePicker($('#picker'), {
       service: svc, daysAhead: S.bookingDaysAhead, excludeId: W.reschedule ? W.reschedule.id : null,
       month: W.month, date: W.date, start: W.start,
-      onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; $('#next').disabled = !v.start; }
+      announce: msg => { const s = $('#wstatus'); if (s) { s.textContent = ''; setTimeout(() => { s.textContent = msg; }, 30); } },
+      onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; const n = $('#next'); if (n) n.disabled = !v.start; }
     });
   }
 
@@ -176,6 +177,7 @@
     $('#back').addEventListener('click', () => { W.step = 2; renderWizard(); });
     if ($('#note')) $('#note').addEventListener('input', e => { W.note = e.target.value; });
     $('#confirm').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+      if (!W.date || !W.start) { W.step = 2; renderWizard(); return; }
       try {
         let r;
         if (W.reschedule) r = await API.put(`/api/my/bookings/${W.reschedule.id}`, { date: W.date, start: W.start });

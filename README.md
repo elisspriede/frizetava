@@ -34,6 +34,7 @@ Demo klients: `anna` / `anna123`. **Uzmanību:** šī komanda pārraksta `data/d
 | Adrese | Kas tur ir |
 |---|---|
 | `/` | Publiskā lapa: pakalpojumi, cenas, darba laiks, kontakti, tuvākais brīvais laiks |
+| `/pieteikties` | Pieteikšanās vizītei bez konta (pakalpojums, brīvs laiks, vārds, tālrunis) ar iespēju pēc tam izveidot kontu |
 | `/pieslegties` | Pieslēgšanās (klientiem un administratoram) un reģistrācija |
 | `/konts` | Klienta konts: pieteikties vizītei, pārcelt, atcelt, vēsture, profils |
 | `/admin` | Administratora panelis |

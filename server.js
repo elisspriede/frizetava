@@ -182,7 +182,7 @@ function createBooking({ user, service, date, start, note, by, guestName, guestP
     if (!computeSlots(date, dur).includes(start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
     const active = db.bookings.filter(b => b.userId === user.id && b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) > Date.now()).length;
     if (active >= db.settings.maxActiveBookings) fail(409, `Vienlaikus var būt ne vairāk kā ${db.settings.maxActiveBookings} aktīvi pieraksti.`);
-    if (user.selfRegistered && Date.now() - Date.parse(user.createdAt) < 24 * 3600e3 && active >= 1)
+    if (user.selfRegistered && !user.claimedFromGuest && Date.now() - Date.parse(user.createdAt) < 24 * 3600e3 && active >= 1)
       fail(409, `Jauniem kontiem pirmajā diennaktī var būt viens aktīvs pieraksts. Lai pierakstītos vēlreiz, zvani: ${db.settings.phone}`);
   } else if (!force && hasConflict(date, s, e)) {
     fail(409, 'Šis laiks pārklājas ar citu pierakstu.');
@@ -372,12 +372,21 @@ route('GET', '/api/days', null, ({ query, user }) => {
 });
 
 // --- pieteikšanās bez konta
-const digits = v => String(v || '').replace(/\D/g, '').replace(/^371(?=\d{8}$)/, '');
+const digits = v => {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);            // 00371… → 371…
+  if (/^371\d{8}$/.test(d)) d = d.slice(3);          // 371XXXXXXXX → XXXXXXXX
+  else if (/^3710\d{8}$/.test(d)) d = d.slice(4);    // +371 0XXXXXXXX
+  else if (/^0\d{8}$/.test(d)) d = d.slice(1);       // 0XXXXXXXX
+  return d;
+};
 const sha256 = v => crypto.createHash('sha256').update(String(v)).digest('hex');
 const CLAIM_HOURS = 2;
 
 route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   const S = db.settings;
+  const ip = clientIp(req);
+  if (!hit('guesttry:' + ip, 20, 3600e3)) fail(429, `Pārāk daudz mēģinājumu. Lūdzu zvani: ${S.phone}`); // visi mēģinājumi, arī neveiksmīgie
   if (S.allowGuestBooking === false) fail(403, `Pieteikšanās bez konta šobrīd nav pieejama. Lūdzu pieslēdzies vai zvani: ${S.phone}`);
   if (clean(body.website)) fail(400, 'Nederīgi dati.'); // slazds robotiem (slēpts lauks)
   const svc = getService(body.serviceId);
@@ -387,13 +396,14 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   if (digits(phone).length < 8 || digits(phone).length > 15) fail(400, 'Lūdzu ievadi derīgu tālruņa numuru.');
   if (!U.isDate(body.date) || !U.isTime(body.start)) fail(400, 'Lūdzu izvēlies datumu un laiku.');
 
+  if (!computeSlots(body.date, svc.duration).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
+
   // ierobežojumi pret surogātpieteikumiem
-  const ip = clientIp(req);
   if (isLimited('guest:' + ip, 3) || isLimited('guestday:' + ip, 6)) fail(429, `Pārāk daudz pieteikumu no šīs ierīces. Lūdzu zvani: ${S.phone}`);
   const now = Date.now();
   const futureActive = b => b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) > now;
   const samePhone = db.bookings.filter(b => futureActive(b) && digits(b.userId ? (getUser(b.userId) || {}).phone : b.guestPhone) === digits(phone)).length;
-  if (samePhone >= S.maxActiveBookings) fail(409, `Ar šo tālruņa numuru jau ir ${samePhone} aktīvi pieraksti. Lai pieteiktos vēl, lūdzu zvani: ${S.phone}`);
+  if (samePhone >= S.maxActiveBookings) fail(409, `Ar šo tālruņa numuru jau ir sasniegts aktīvo pierakstu skaits. Lai pieteiktos vēl, lūdzu zvani: ${S.phone}`);
   const lastHour = db.bookings.filter(b => b.createdBy === 'guest' && now - Date.parse(b.createdAt) < 3600e3).length;
   if (lastHour >= 20) fail(429, `Tiešsaistes pieteikšanās īslaicīgi nav pieejama. Lūdzu zvani: ${S.phone}`);
 
@@ -405,17 +415,22 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   b.claimHash = sha256(claimToken);
   b.claimExpires = now + CLAIM_HOURS * 3600e3;
   save();
-  return { booking: bookingView(b), claimToken: S.allowRegistration ? claimToken : null, name, phone };
+  // pieslēgtam lietotājam (piem., adminam, kas pieraksta klientu) konta piedāvājumu nerāda
+  return { booking: bookingView(b), claimToken: S.allowRegistration && !sessionUser(req) ? claimToken : null, name, phone };
 });
 
 route('POST', '/api/guest/claim', null, ({ body, req, res }) => {
   const ip = clientIp(req);
   if (!hit('regtry:' + ip, 30, 3600e3)) fail(429, LIMIT_MSG);
   if (!db.settings.allowRegistration) fail(403, 'Reģistrācija šobrīd ir slēgta. Pieeju vari saņemt salonā.');
-  const token = String(body.token || '');
-  const h = token.length === 64 ? sha256(token) : null;
-  const b = h && db.bookings.find(x => x.claimHash === h);
-  if (!b || !(b.claimExpires > Date.now()) || b.userId) fail(410, 'Šī iespēja vairs nav derīga. Kontu vari izveidot pieslēgšanās lapā.');
+  if (sessionUser(req)) fail(409, 'Tu jau esi pieslēdzies. Lai izveidotu jaunu kontu, vispirms izrakstieties.');
+  // vienā reizē var piesaistīt visus šajā pārlūkā tikko veiktos pierakstus (līdz 10)
+  const tokens = (Array.isArray(body.tokens) ? body.tokens : [body.token]).slice(0, 10).map(t => String(t || '')).filter(t => t.length === 64);
+  const hashes = new Set(tokens.map(sha256));
+  const found = db.bookings.filter(x => x.claimHash && hashes.has(x.claimHash) && x.claimExpires > Date.now() && !x.userId)
+    .sort((a, c) => String(c.createdAt).localeCompare(String(a.createdAt)));
+  if (!found.length) fail(410, 'Šī iespēja vairs nav derīga. Kontu vari izveidot pieslēgšanās lapā.');
+  const b = found[0]; // jaunākais pieraksts — no tā ņem vārdu un tālruni
   const username = clean(body.username, 64).toLowerCase();
   validateUsername(username);
   validatePassword(body.password);
@@ -423,13 +438,12 @@ route('POST', '/api/guest/claim', null, ({ body, req, res }) => {
   const { salt, hash } = U.hashPassword(body.password);
   const u = {
     id: U.uid('usr'), role: 'client', username, name: b.guestName || 'Klients', phone: b.guestPhone || '', email: clean(body.email, 120),
-    salt, hash, active: true, notes: '', createdAt: new Date().toISOString(), selfRegistered: true
+    salt, hash, active: true, notes: '', createdAt: new Date().toISOString(), selfRegistered: true, claimedFromGuest: true
   };
   db.users.push(u);
-  b.userId = u.id;
-  delete b.guestName; delete b.guestPhone; delete b.claimHash; delete b.claimExpires;
+  for (const x of found) { x.userId = u.id; delete x.guestName; delete x.guestPhone; delete x.claimHash; delete x.claimExpires; }
   startSession(res, u, req); // saglabā datubāzi
-  return { user: publicUser(u) };
+  return { user: publicUser(u), attached: found.length };
 });
 
 // --- klients

@@ -16,9 +16,20 @@
   $('#brand').innerHTML = `${BRAND_MARK}<span>${esc(S.salonName)}</span>`;
   if (me && me.role === 'admin') { $('#loginLink').textContent = 'Admin panelis'; $('#loginLink').href = '/admin'; }
 
+  // apstiprinājums un konta atslēgas saglabājas šīs cilnes sesijā (atsvaidzināšana tās nepazaudē)
+  const store = {
+    get(k, d) { try { const v = JSON.parse(sessionStorage.getItem(k) || 'null'); return v == null ? d : v; } catch { return d; } },
+    set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch { /* privātais režīms */ } },
+    del(...ks) { try { ks.forEach(k => sessionStorage.removeItem(k)); } catch { /* */ } }
+  };
+  let tokens = store.get('guestTokens', []).filter(t => t && t.exp > Date.now()).slice(-10);
+  const saved = store.get('guestDone', null);
+  if (saved && saved.booking) W.done = saved;
+  const announce = msg => { const s = $('#wstatus'); if (s) { s.textContent = ''; setTimeout(() => { s.textContent = msg; }, 30); } };
+
   // pakalpojuma priekšizvēle no saites (?pakalpojums=…)
   const pre = new URLSearchParams(location.search).get('pakalpojums');
-  if (pre && svcById(pre)) { W.serviceId = pre; W.step = 2; }
+  if (pre && svcById(pre) && !W.done) { W.serviceId = pre; W.step = 2; }
 
   /* ------------------------------------------------ sānu kartītes */
   function renderInfo() {
@@ -58,7 +69,7 @@
     }).join('')}</div>`;
   }
 
-  function render() {
+  function render(focus = false) {
     renderSummary();
     const el = $('#wizard');
     if (S.allowGuestBooking === false) {
@@ -66,10 +77,12 @@
         <p style="margin-top:8px">Lūdzu <a href="/pieslegties" style="color:var(--accent);font-weight:600">pieslēdzies savam kontam</a>${S.phone ? ` vai zvani <a href="${esc(phoneHref)}" style="font-weight:600">${esc(S.phone)}</a>` : ''}.</p></div>`;
       return;
     }
-    if (W.done) return renderDone();
-    el.innerHTML = `<div class="card-head"><div><span class="eyebrow">Bez reģistrācijas</span><h3 style="margin-top:6px;font-size:22px">${['Izvēlies pakalpojumu', 'Izvēlies laiku', 'Tavi dati'][W.step - 1]}</h3></div></div>` + stepsBar() + '<div id="wbody"></div>';
+    if (W.done) { renderDone(); if (focus) { $('#wstep').focus({ preventScroll: true }); announce('Pieraksts apstiprināts'); } return; }
+    const title = ['Izvēlies pakalpojumu', 'Izvēlies laiku', 'Tavi dati'][W.step - 1];
+    el.innerHTML = `<div class="card-head"><div><span class="eyebrow">Bez reģistrācijas</span><h3 id="wstep" tabindex="-1" style="margin-top:6px;font-size:22px;outline:none">${title}</h3></div></div>` + stepsBar() + '<div id="wbody"></div>';
+    if (focus) { $('#wstep').focus({ preventScroll: true }); announce(`${W.step}. solis no 3: ${title}`); }
     $$('.step.done', el).forEach(s => {
-      const go = () => { W.step = +s.dataset.goto; render(); };
+      const go = () => { W.step = +s.dataset.goto; render(true); };
       s.addEventListener('click', go);
       s.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     });
@@ -87,7 +100,7 @@
     $$('[data-svc]').forEach(b => b.addEventListener('click', () => {
       if (W.serviceId !== b.dataset.svc) { W.date = null; W.start = null; }
       W.serviceId = b.dataset.svc; W.step = 2;
-      render();
+      render(true);
       $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
   }
@@ -97,11 +110,11 @@
       <div class="modal-foot" style="justify-content:space-between">
         <button type="button" class="btn btn-line" id="back">Atpakaļ</button>
         <button type="button" class="btn" id="next" ${W.start ? '' : 'disabled'}>Turpināt ${icon('arrowR')}</button></div>`;
-    $('#back').addEventListener('click', () => { W.step = 1; render(); });
-    $('#next').addEventListener('click', () => { W.step = 3; render(); });
+    $('#back').addEventListener('click', () => { W.step = 1; render(true); });
+    $('#next').addEventListener('click', () => { if (W.start) { W.step = 3; render(true); } });
     createDateTimePicker($('#picker'), {
-      service: svcById(W.serviceId), daysAhead: S.bookingDaysAhead, month: W.month, date: W.date, start: W.start,
-      onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; $('#next').disabled = !v.start; renderSummary(); }
+      service: svcById(W.serviceId), daysAhead: S.bookingDaysAhead, month: W.month, date: W.date, start: W.start, announce,
+      onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; const n = $('#next'); if (n) n.disabled = !v.start; renderSummary(); }
     });
   }
 
@@ -119,7 +132,7 @@
           <button type="submit" class="btn btn-lg btn-accent">Apstiprināt pierakstu</button></div>
       </form>`;
     const f = $('#details');
-    $('#back').addEventListener('click', () => { W.step = 2; render(); });
+    $('#back').addEventListener('click', () => { W.step = 2; render(true); });
     f.addEventListener('input', () => { W.name = f.name.value; W.phone = f.phone.value; W.note = f.note.value; });
     setTimeout(() => (W.name ? f.phone : f.name).focus(), 50);
     f.addEventListener('submit', async e => {
@@ -128,14 +141,17 @@
       const d = formData(f);
       const bad = d.name.trim().length < 2 ? 'Lūdzu ievadi savu vārdu.' : d.phone.replace(/\D/g, '').length < 8 ? 'Lūdzu ievadi derīgu tālruņa numuru.' : '';
       if (bad) { err.textContent = bad; err.classList.remove('hidden'); (d.name.trim().length < 2 ? f.name : f.phone).focus(); return; }
+      if (!W.date || !W.start) { toast('Lūdzu izvēlies laiku.', 'error'); W.step = 2; render(true); return; }
       await withBusy(e.submitter, async () => {
         try {
           const r = await API.post('/api/guest/bookings', { serviceId: W.serviceId, date: W.date, start: W.start, name: d.name, phone: d.phone, note: d.note, website: d.website });
-          W.done = r;
-          render();
+          if (r.claimToken) { tokens.push({ t: r.claimToken, exp: Date.now() + 2 * 3600e3 - 60e3 }); tokens = tokens.slice(-10); store.set('guestTokens', tokens); }
+          W.done = { booking: r.booking, name: r.name, phone: r.phone, hasToken: !!r.claimToken };
+          store.set('guestDone', W.done);
+          render(true);
           $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (x) {
-          if (x.status === 409 && /laiks/.test(x.message)) { toast(x.message, 'error'); W.start = null; W.step = 2; render(); return; }
+          if (x.status === 409 && /laiks/.test(x.message)) { toast(x.message, 'error'); W.start = null; W.step = 2; render(true); return; }
           err.textContent = x.message; err.classList.remove('hidden');
         }
       });
@@ -144,32 +160,35 @@
 
   /* ------------------------------------------------ apstiprinājums + konta piedāvājums */
   function renderDone() {
-    const { booking: b, claimToken, name } = W.done;
+    const { booking: b, name } = W.done;
+    const live = tokens.filter(t => t.exp > Date.now());
     $('#wizard').innerHTML = `<div style="text-align:center;padding:16px 6px 4px">
         <div style="width:72px;height:72px;border-radius:50%;margin:0 auto 18px;display:grid;place-items:center;background:var(--ok-bg);color:var(--ok)">${icon('check', 'style="width:34px;height:34px"')}</div>
         <span class="eyebrow">Pieraksts apstiprināts</span>
-        <h2 style="font-size:clamp(24px,3.4vw,30px);margin:10px 0 6px;letter-spacing:-.03em">${fmt.dateLong(b.date)}, ${b.start}</h2>
+        <h2 id="wstep" tabindex="-1" style="font-size:clamp(24px,3.4vw,30px);margin:10px 0 6px;letter-spacing:-.03em;outline:none">${fmt.dateLong(b.date)}, ${b.start}</h2>
         <p class="muted">${esc(b.serviceName)} · ${fmt.money(b.price)}</p>
         ${S.address ? `<p class="muted small" style="margin-top:4px">${esc(S.address)}</p>` : ''}
         <p class="small" style="margin-top:14px;color:var(--ink-2)">Paldies, ${esc(name.split(' ')[0])}! Ja vajadzēs pārcelt vai atcelt${S.phone ? `, zvani <a href="${esc(phoneHref)}" style="font-weight:600">${esc(S.phone)}</a>` : ', sazinies ar salonu'}.</p>
       </div>
       <div id="claim"></div>`;
-    renderClaim(claimToken);
+    renderClaim(W.done.hasToken && live.length ? live : null);
   }
 
-  function renderClaim(token) {
+  function renderClaim(live) {
     const box = $('#claim');
     const again = `<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:22px">
         <button type="button" class="btn btn-line" id="again">${icon('plus')} Vēl viens pieraksts</button><a class="btn btn-ghost" href="/">Uz sākumlapu</a></div>`;
     const bindAgain = () => $('#again').addEventListener('click', () => {
-      Object.assign(W, { step: 1, serviceId: null, date: null, start: null, note: '', done: null, month: null });
-      render();
+      store.del('guestDone'); // atslēgas paliek — nākamais pieraksts arī varēs tikt piesaistīts kontam
+      Object.assign(W, { step: 1, serviceId: null, date: null, start: null, note: '', month: null, name: W.done.name || W.name, phone: W.done.phone || W.phone, done: null });
+      render(true);
     });
-    if (!token || !S.allowRegistration) { box.innerHTML = again; bindAgain(); return; }
+    if (!live || !S.allowRegistration || me) { box.innerHTML = again; bindAgain(); return; }
 
     box.innerHTML = `<div class="summary" style="margin-top:22px;text-align:left;gap:14px">
         <div style="display:block"><span class="eyebrow">Ieteikums</span>
           <h3 style="font-size:19px;margin-top:6px">Izveido savu kontu — tikai lietotājvārds un parole</h3>
+          ${live.length > 1 ? `<p class="small" style="margin-top:6px;color:var(--ink-2)">Kontam tiks piesaistīti visi ${live.length} šodien veiktie pieraksti.</p>` : ''}
           <ul style="margin:10px 0 0;padding-left:18px;color:var(--ink-2);font-size:14px;line-height:1.7">
             <li>redzēsi visus savus pierakstus vienuviet;</li>
             <li>varēsi pats pārcelt vai atcelt vizīti;</li>
@@ -185,10 +204,10 @@
             <button type="button" class="btn btn-line" id="noThanks">Nē, paldies</button>
             <button type="submit" class="btn">Izveidot kontu</button></div>
         </form>
-        <p class="tiny muted" style="display:block">Vārds un tālrunis tiks ņemti no šī pieraksta, un pieraksts uzreiz parādīsies tavā kontā.</p>
+        <p class="tiny muted" style="display:block">Vārds un tālrunis tiks ņemti no pieraksta, un pieraksts uzreiz parādīsies tavā kontā.</p>
       </div>`;
     passwordToggle(box);
-    $('#noThanks').addEventListener('click', () => { box.innerHTML = again; bindAgain(); });
+    $('#noThanks').addEventListener('click', () => { store.set('guestDone', { ...W.done, hasToken: false }); W.done.hasToken = false; box.innerHTML = again; bindAgain(); $('#again').focus(); });
     $('#claimForm').addEventListener('submit', async e => {
       e.preventDefault();
       const err = $('#claimErr'); err.classList.add('hidden');
@@ -196,12 +215,13 @@
       if (!f.reportValidity()) return;
       await withBusy(e.submitter, async () => {
         try {
-          await API.post('/api/guest/claim', { token, ...formData(f) });
+          await API.post('/api/guest/claim', { tokens: live.map(t => t.t), ...formData(f) });
+          store.del('guestDone', 'guestTokens');
           toast('Konts izveidots!');
           location.href = '/konts';
         } catch (x) {
           err.textContent = x.message; err.classList.remove('hidden');
-          if (x.status === 410) { setTimeout(() => { box.innerHTML = again; bindAgain(); }, 2500); }
+          if (x.status === 410) { store.del('guestTokens'); tokens = []; W.done.hasToken = false; store.set('guestDone', W.done); setTimeout(() => { box.innerHTML = again; bindAgain(); }, 2500); }
         }
       });
     });
