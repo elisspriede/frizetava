@@ -75,7 +75,8 @@
     if (isWhatsAppUrl(s.whatsapp)) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="${esc(s.whatsapp)}"><span class="ic wa">${WA_ICON}</span><span><small>WhatsApp</small><b>Raksti mums</b></span></a>`);
     whatsappButton(s.whatsapp);
     if (s.instagram) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="https://instagram.com/${esc(s.instagram.replace(/^@/, ''))}"><span class="ic">${icon('insta')}</span><span><small>Instagram</small><b>@${esc(s.instagram.replace(/^@/, ''))}</b></span></a>`);
-    else if (s.email) contacts.push(`<a class="glass contact" href="mailto:${esc(s.email)}"><span class="ic">${icon('mail')}</span><span><small>E-pasts</small><b>${esc(s.email)}</b></span></a>`);
+    if (/^https:\/\/((www|m|web)\.)?(facebook\.com|fb\.com|fb\.me)\//i.test(s.facebook || '')) contacts.push(`<a class="glass contact" target="_blank" rel="noopener" href="${esc(s.facebook)}"><span class="ic">${icon('facebook')}</span><span><small>Facebook</small><b>Seko mums</b></span></a>`);
+    if (!s.instagram && !s.facebook && s.email) contacts.push(`<a class="glass contact" href="mailto:${esc(s.email)}"><span class="ic">${icon('mail')}</span><span><small>E-pasts</small><b>${esc(s.email)}</b></span></a>`);
     $('#contacts').innerHTML = contacts.join('');
   } catch (e) {
     toast(e.message, 'error');

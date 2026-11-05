@@ -107,7 +107,7 @@ function publicInfo() {
       salonName: s.salonName, tagline: s.tagline, about: s.about, address: s.address, phone: s.phone, email: s.email,
       ownerName: s.ownerName || '', ownerTitle: s.ownerTitle || '', aboutQuote: s.aboutQuote || '', aboutPhoto: s.aboutPhoto || '',
       hasGallery: Array.isArray(db.gallery) && db.gallery.some(g => g.visible !== false),
-      instagram: s.instagram, whatsapp: s.whatsapp || '', allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
+      instagram: s.instagram, facebook: s.facebook || '', whatsapp: s.whatsapp || '', allowRegistration: s.allowRegistration, allowGuestBooking: s.allowGuestBooking !== false, cancelHours: s.cancelHours,
       bookingDaysAhead: s.bookingDaysAhead, maxActiveBookings: s.maxActiveBookings
     },
     hours: db.hours, services, nextFree,
@@ -821,6 +821,14 @@ route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: settings
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
   const s = db.settings, b = body || {};
   for (const k of ['salonName', 'tagline', 'address', 'phone', 'email', 'instagram']) if (b[k] !== undefined) s[k] = clean(b[k], 200);
+  if (b.facebook !== undefined) {
+    let fb = clean(b.facebook, 200);
+    if (fb && !/^https?:\/\//i.test(fb)) fb = 'https://' + fb; // „facebook.com/lapa” → pilna saite
+    fb = fb.replace(/^http:\/\//i, 'https://');
+    // tikai Facebook saites (aizsardzība pret javascript: u.c.)
+    if (fb && !/^https:\/\/((www|m|web)\.)?(facebook\.com|fb\.com|fb\.me)\/[^\s"'<>]+$/i.test(fb)) fail(400, 'Facebook saitei jābūt, piem., https://www.facebook.com/tava-lapa');
+    s.facebook = fb;
+  }
   if (b.whatsapp !== undefined) {
     const wa = clean(b.whatsapp, 200);
     // tikai WhatsApp saites (aizsardzība pret javascript: u.c. saitēm)

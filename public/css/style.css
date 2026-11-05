@@ -695,3 +695,6 @@ body.has-wa { padding-bottom: 84px; }
   .g-card { border-radius: 18px; }
   .g-card figcaption { padding: 10px 12px; }
 }
+
+/* sadaļu enkuri neslīd zem lipīgās augšējās joslas */
+main section[id] { scroll-margin-top: 96px; }

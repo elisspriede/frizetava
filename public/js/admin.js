@@ -643,6 +643,7 @@
           <label class="field full"><span>Adrese</span><input class="input" name="address" value="${esc(s.address)}"></label>
           <label class="field"><span>E-pasts</span><input class="input" name="email" type="email" value="${esc(s.email)}"></label>
           <label class="field"><span>Instagram</span><input class="input" name="instagram" placeholder="lietotajvards" value="${esc(s.instagram)}"></label>
+          <label class="field"><span>Facebook saite</span><input class="input" name="facebook" placeholder="https://www.facebook.com/tava-lapa" value="${esc(s.facebook || '')}"></label>
           <label class="field full"><span>WhatsApp saite <span class="muted">(poga mājaslapas stūrī; tukšs — nerāda)</span></span><input class="input" name="whatsapp" type="url" placeholder="https://wa.me/37120000000" value="${esc(s.whatsapp || '')}"></label>
           <div class="full"><button class="btn" type="submit">Saglabāt</button></div></form></section>
       <section class="glass card span-5"><div class="card-head"><h3>Pierakstu noteikumi</h3></div>
