@@ -228,7 +228,6 @@ table.table { width: 100%; border-collapse: separate; border-spacing: 0; font-si
 .hero h1 .soft { color: #9a9b93; }
 .hero .lead { margin-top: 22px; font-size: 19px; color: var(--ink-2); max-width: 520px; }
 .hero .cta { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
-.hero .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 34px; }
 .hero-visual { position: relative; min-height: 460px; }
 .hero-art { position: absolute; inset: 0 0 0 40px; border-radius: 34px; overflow: hidden;
   background: linear-gradient(170deg, #cdbba0 0%, #b9a586 40%, #8e9d7f 100%); box-shadow: var(--shadow-lg); }
@@ -589,24 +588,26 @@ body.has-wa { padding-bottom: 84px; }
 }
 
 /* ==========================================================================
-   PAR MANI (ar foto)
+   PAR MANI (sākumlapas augšā: mazs foto pa kreisi, teksts pa labi)
    ========================================================================== */
-.about-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 48px; align-items: center; }
-.about-photo { position: relative; margin: 0; }
-.about-photo img { width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover; object-position: 50% 20%; border-radius: 34px; box-shadow: var(--shadow-lg); display: block; }
-.about-photo::before { content: ''; position: absolute; inset: 18px -18px -18px 18px; border-radius: 34px; border: 1.5px solid rgba(201, 111, 79, .35); z-index: -1; }
-.about-badge { position: absolute; left: -16px; bottom: 34px; padding: 12px 16px; border-radius: 18px; font-size: 13px; font-weight: 600; color: var(--primary); display: flex; align-items: center; }
-.about-text { display: grid; gap: 14px; max-width: 560px; }
-.about-text .hello { font-size: clamp(34px, 4.4vw, 52px); color: var(--accent); line-height: 1; margin-top: 4px; }
-.about-text h2 { font-size: clamp(36px, 5vw, 62px); font-weight: 800; letter-spacing: -.04em; line-height: 1; }
-.about-text .role { font-size: 13px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; color: var(--ink-2); }
-.about-text .divider { display: flex; align-items: center; gap: 12px; color: var(--accent); max-width: 280px; }
-.about-text .divider::before, .about-text .divider::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(201, 111, 79, .5), transparent); }
-.about-text .divider svg { width: 20px; height: 20px; }
-.about-lead { font-size: 18.5px; color: var(--ink-2); line-height: 1.65; }
-.about-quote { font-size: clamp(22px, 2.6vw, 28px); color: var(--primary); padding: 12px 22px; border-radius: 18px; width: fit-content;
+.hero-about { margin-top: 34px; padding: 22px; border-radius: 28px; display: flow-root; max-width: 620px; scroll-margin-top: 96px; }
+.hero-about .ha-photo { float: left; width: 150px; height: auto; aspect-ratio: 4 / 5; object-fit: cover; object-position: 50% 20%;
+  border-radius: 20px; margin: 0 22px 10px 0; box-shadow: var(--shadow); display: block; }
+.ha-text > * + * { margin-top: 8px; }
+@media (min-width: 721px) {
+  .hero-about { display: flex; gap: 22px; align-items: flex-start; }
+  .hero-about .ha-photo { float: none; flex: 0 0 150px; margin: 0; }
+  .ha-text { flex: 1; min-width: 0; }
+}
+@media (max-width: 960px) { .hero-about { max-width: none; } }
+.hero-about .hello { font-size: 28px; color: var(--accent); line-height: 1; }
+.hero-about h2 { font-size: 28px; font-weight: 800; letter-spacing: -.03em; line-height: 1.08; margin-top: 4px; }
+.hero-about .role { font-size: 11.5px; font-weight: 700; letter-spacing: .26em; text-transform: uppercase; color: var(--ink-2); margin-top: 6px; }
+.about-lead { font-size: 15.5px; color: var(--ink-2); line-height: 1.6; }
+.hero-about .role + .about-lead { margin-top: 14px; }
+.about-quote { font-size: 20px; color: var(--primary); padding: 8px 16px; border-radius: 14px; width: fit-content; max-width: 100%;
   background: linear-gradient(90deg, rgba(217, 201, 178, .55), rgba(217, 201, 178, 0)); }
-.about-text .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.hero-about .about-quote { margin-top: 14px; }
 
 .contact-wrap { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .contact-wrap .contact-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -689,15 +690,11 @@ body.has-wa { padding-bottom: 84px; }
 .about-admin-photo { width: 120px; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 16px; box-shadow: var(--shadow-sm); }
 
 @media (max-width: 960px) {
-  .about-grid { grid-template-columns: 1fr; gap: 34px; }
-  .about-photo { max-width: 460px; margin: 0 auto; width: 100%; }
-  .about-badge { left: 8px; }
   .contact-wrap { grid-template-columns: 1fr; }
   .works { grid-template-columns: 1fr; padding: 24px; }
 }
 @media (max-width: 720px) {
   .works-thumbs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .about-photo::before { inset: 12px -10px -12px 10px; }
   .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .g-card { border-radius: 18px; }
   .g-card figcaption { padding: 10px 12px; }
@@ -707,11 +704,18 @@ body.has-wa { padding-bottom: 84px; }
 main section[id] { scroll-margin-top: 96px; }
 
 /* pārbaudes labojumi */
-.about-grid.no-photo { grid-template-columns: 1fr; }
-.about-grid.no-photo .about-text { max-width: 760px; }
 @media (max-width: 960px) { .mobile-nav a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
 @media (max-width: 720px) {
   .lightbox .lb-prev, .lightbox .lb-next { top: auto; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); margin-top: 0; }
   .lightbox .lb-cap { padding: 12px 56px 0; min-height: 48px; }
 }
 body.lb-open .wa-fab { display: none; }
+@media (max-width: 720px) {
+  .hero-about { padding: 16px; border-radius: 24px; margin-top: 28px; }
+  .hero-about .ha-photo { width: 112px; border-radius: 16px; margin: 0 14px 8px 0; }
+  .hero-about .hello { font-size: 23px; }
+  .hero-about h2 { font-size: 23px; }
+  .hero-about .role { font-size: 10.5px; letter-spacing: .2em; }
+  .about-lead { font-size: 14.5px; }
+  .about-quote { font-size: 18px; padding: 7px 12px; }
+}

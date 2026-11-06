@@ -627,7 +627,7 @@
         <form id="infoForm" class="form-grid">
           <label class="field"><span>Nosaukums</span><input class="input" name="salonName" value="${esc(s.salonName)}" required></label>
           <label class="field"><span>Tālrunis</span><input class="input" name="phone" value="${esc(s.phone)}"></label>
-          <label class="field full"><span>Sauklis</span><input class="input" name="tagline" value="${esc(s.tagline)}"></label>
+          <label class="field full"><span>Sauklis (rādās sadaļā „Par mani”)</span><input class="input" name="tagline" value="${esc(s.tagline)}"></label>
           <div class="field full"><span>„Par mani” foto</span>
             <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
               ${s.aboutPhoto ? `<img class="about-admin-photo" src="${esc(s.aboutPhoto)}" alt="Pašreizējais foto">` : '<span class="muted small">Foto netiek rādīts.</span>'}
