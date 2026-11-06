@@ -9,7 +9,8 @@
     $('#heroEyebrow').textContent = s.salonName;
     // Par mani
     $('#about').textContent = s.about || '';
-    if (s.ownerName) { $('#ownerName').textContent = s.ownerName; $('#aboutPhoto').alt = `${s.ownerName}${s.ownerTitle ? ', ' + s.ownerTitle.toLowerCase() : ''}`; }
+    $('#aboutPhoto').alt = s.ownerName ? `${s.ownerName}${s.ownerTitle ? ', ' + s.ownerTitle.toLowerCase() : ''}` : s.salonName;
+    if (s.ownerName) $('#ownerName').textContent = s.ownerName;
     else $('#ownerHeading').textContent = s.salonName;
     $('#ownerTitle').textContent = s.ownerTitle || '';
     $('#ownerTitle').classList.toggle('hidden', !s.ownerTitle);
@@ -18,8 +19,10 @@
     $('#aboutQuote').textContent = s.aboutQuote || '';
     $('#aboutQuote').classList.toggle('hidden', !s.aboutQuote);
     const photo = $('#aboutPhoto');
+    // foto ielādējas tikai pēc iestatījumiem, lai nenomirgo noklusējuma bilde, ja tā nomainīta vai noņemta
     if (!s.aboutPhoto) { photo.classList.add('hidden'); photo.closest('.hero-about').classList.add('no-photo'); }
-    else if (s.aboutPhoto !== '/img/lasma.jpg') { photo.removeAttribute('srcset'); photo.src = s.aboutPhoto; }
+    else if (s.aboutPhoto === '/img/lasma.jpg') { photo.srcset = '/img/lasma-sm.jpg 560w, /img/lasma.jpg 819w'; photo.src = '/img/lasma-sm.jpg'; }
+    else photo.src = s.aboutPhoto;
     // Mani darbi (tikai ja galerijā ir bildes)
     if (s.hasGallery) {
       API.get('/api/gallery').then(({ items }) => {
