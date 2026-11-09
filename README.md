@@ -48,7 +48,7 @@ Pēc pieslēgšanās sistēma pati novirza: administrators → `/admin`, klients
 - **Pieraksti** — saraksts ar filtriem un CSV eksportu (atveras Excel).
 - **Klienti** — klientu bāze, jauna klienta izveide ar lietotājvārdu un paroli (ģenerē automātiski), paroles atjaunošana, bloķēšana, piezīmes, vizīšu vēsture.
 - **Pakalpojumi** — cenrādis: nosaukums, apraksts, ilgums, cena, krāsa, redzamība.
-- **Darba laiks** — grafiks katrai nedēļas dienai ar pārtraukumu, brīvdienas/atvaļinājumi.
+- **Darba laiks** — grafiks katrai nedēļas dienai (bez pārtraukumiem), brīvdienas/atvaļinājumi.
 - **Iestatījumi** — salona informācija, pierakstu noteikumi (laika solis, cik iepriekš, līdz kuram brīdim var atcelt, maks. aktīvo pierakstu skaits, vai klienti drīkst paši reģistrēties), admina pieejas dati, rezerves kopija.
 
 ## SMS paziņojumi (Sendberry)

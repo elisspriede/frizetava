@@ -223,7 +223,6 @@
       if (closed) html += shade(minS, maxE);
       else {
         html += shade(minS, toMin(h.start)) + shade(toMin(h.end), maxE);
-        if (h.breakStart && h.breakEnd) html += shade(toMin(h.breakStart), toMin(h.breakEnd));
       }
       // pārklājošos pierakstu izkārtojums joslās
       const evs = bk.filter(b => b.date === d).map(b => ({ b, s: toMin(b.start), e: toMin(b.end) })).sort((a, c) => a.s - c.s);
@@ -568,13 +567,12 @@
     const order = [1, 2, 3, 4, 5, 6, 0];
     const h = schedule.hours;
     view.innerHTML = pageHead('Grafiks', 'Darba laiks', '') + `<div class="dash-grid">
-      <section class="glass card span-7"><div class="card-head"><div><h3>Nedēļas grafiks</h3><p class="muted small">Klienti var pierakstīties tikai darba laikā, ārpus pārtraukumiem.</p></div></div>
+      <section class="glass card span-7"><div class="card-head"><div><h3>Nedēļas grafiks</h3><p class="muted small">Klienti var pierakstīties tikai darba laikā.</p></div></div>
         <form id="hoursForm">${order.map(d => `
           <div class="hours-row ${h[d].open ? '' : 'closed'}" data-d="${d}">
             <label class="switch"><input type="checkbox" name="open" ${h[d].open ? 'checked' : ''}><span class="track"></span><b>${cap(LV.days[d])}</b></label>
             <div class="times-in">
               <input class="input" type="time" name="start" value="${h[d].start}" aria-label="Sākums"><span class="sep">–</span><input class="input" type="time" name="end" value="${h[d].end}" aria-label="Beigas">
-              <span class="lbl">Pārtraukums</span><input class="input" type="time" name="breakStart" value="${h[d].breakStart}" aria-label="Pārtraukuma sākums"><span class="sep">–</span><input class="input" type="time" name="breakEnd" value="${h[d].breakEnd}" aria-label="Pārtraukuma beigas">
             </div></div>`).join('')}
           <div style="margin-top:18px"><button class="btn" type="submit">Saglabāt grafiku</button></div></form></section>
       <section class="glass card span-5"><div class="card-head"><div><h3>Brīvdienas un atvaļinājumi</h3><p class="muted small">Šajās dienās pierakstīties nevarēs.</p></div></div>
@@ -599,7 +597,7 @@
       e.preventDefault();
       const hours = {};
       $$('.hours-row', e.target).forEach(r => {
-        hours[r.dataset.d] = { open: $('[name=open]', r).checked, start: $('[name=start]', r).value, end: $('[name=end]', r).value, breakStart: $('[name=breakStart]', r).value, breakEnd: $('[name=breakEnd]', r).value };
+        hours[r.dataset.d] = { open: $('[name=open]', r).checked, start: $('[name=start]', r).value, end: $('[name=end]', r).value };
       });
       await withBusy(e.submitter, async () => {
         try { await API.put('/api/admin/hours', { hours }); await ensureSchedule(true); toast('Darba laiks saglabāts.'); } catch (x) { toast(x.message, 'error'); }

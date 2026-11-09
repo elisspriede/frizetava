@@ -34,9 +34,7 @@ function daySchedule(date) {
   if (!h || !h.open) return null;
   const start = U.toMin(h.start), end = U.toMin(h.end);
   if (!(end > start)) return null;
-  const breaks = [];
-  if (h.breakStart && h.breakEnd && U.toMin(h.breakEnd) > U.toMin(h.breakStart)) breaks.push([U.toMin(h.breakStart), U.toMin(h.breakEnd)]);
-  return { start, end, breaks };
+  return { start, end };
 }
 
 const busyIntervals = (date, excludeId) => db.bookings
@@ -49,7 +47,7 @@ function computeSlots(date, duration, excludeId) {
   if (!U.isDate(date) || date < today || date > U.addDays(today, st.bookingDaysAhead)) return [];
   const sch = daySchedule(date);
   if (!sch) return [];
-  const busy = busyIntervals(date, excludeId).concat(sch.breaks);
+  const busy = busyIntervals(date, excludeId);
   const minTs = Date.now() + st.minAdvanceHours * 3600e3;
   const out = [];
   for (let t = sch.start; t + duration <= sch.end; t += st.slotStep) {
@@ -315,7 +313,7 @@ function stats(range) {
     const d = U.addDays(today, i);
     const sch = daySchedule(d);
     if (!sch) continue;
-    avail += sch.end - sch.start - sch.breaks.reduce((s, [a, b]) => s + (b - a), 0);
+    avail += sch.end - sch.start;
     booked += busyIntervals(d).reduce((s, [a, b]) => s + (b - a), 0);
   }
 
@@ -791,9 +789,7 @@ route('PUT', '/api/admin/hours', 'admin', ({ body }) => {
     const open = !!h.open;
     if (!U.isTime(h.start) || !U.isTime(h.end)) fail(400, 'Nederīgs darba laiks.');
     if (open && U.toMin(h.end) <= U.toMin(h.start)) fail(400, 'Darba dienas beigām jābūt pēc sākuma.');
-    const hasBreak = U.isTime(h.breakStart) && U.isTime(h.breakEnd);
-    if (hasBreak && U.toMin(h.breakEnd) <= U.toMin(h.breakStart)) fail(400, 'Pārtraukuma beigām jābūt pēc sākuma.');
-    next[d] = { open, start: h.start, end: h.end, breakStart: hasBreak ? h.breakStart : '', breakEnd: hasBreak ? h.breakEnd : '' };
+    next[d] = { open, start: h.start, end: h.end }; // salons strādā bez pārtraukumiem
   }
   db.hours = next; save(); return { hours: db.hours };
 });

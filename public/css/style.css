@@ -235,7 +235,6 @@ table.table { width: 100%; border-collapse: separate; border-spacing: 0; font-si
 .hero-art .quote { position: absolute; top: 28px; left: 30px; color: #fff; font-size: 26px; line-height: 1.15; font-weight: 600; letter-spacing: -.02em; max-width: 200px; text-shadow: 0 2px 20px rgba(0,0,0,.08); }
 .float-card { position: absolute; padding: 18px 20px; border-radius: 22px; }
 .float-card.fc1 { left: 0; bottom: 44px; width: 250px; }
-.float-card.fc2 { right: -14px; top: 34px; width: 190px; }
 .float-card .k { font-size: 12px; color: var(--muted); font-weight: 600; }
 .float-card .v { font-size: 20px; font-weight: 800; color: var(--primary); letter-spacing: -.02em; margin-top: 2px; }
 .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--secondary); box-shadow: 0 0 0 0 rgba(107,127,91,.6); animation: pulse 2s infinite; margin-right: 6px; vertical-align: middle; }
@@ -489,7 +488,6 @@ footer.site { padding: 40px 0 50px; color: var(--muted); font-size: 13.5px; disp
 .hours-row .times-in { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .hours-row .times-in .input { width: 116px; height: 40px; }
 .hours-row .times-in .sep { color: var(--muted); }
-.hours-row .times-in .lbl { font-size: 12px; color: var(--muted); margin-left: 8px; }
 .hours-row.closed .times-in { opacity: .4; pointer-events: none; }
 
 .svc-admin { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
@@ -537,7 +535,6 @@ footer.site { padding: 40px 0 50px; color: var(--muted); font-size: 13.5px; disp
   .form-grid { grid-template-columns: 1fr; }
   .card { padding: 18px; }
   .about, .hours-card, .cta-band { padding: 26px; }
-  .float-card.fc2 { right: 0; }
   .hero-art { left: 16px; }
   .donut-wrap { grid-template-columns: 1fr; justify-items: center; }
   .donut-wrap .legend { width: 100%; }

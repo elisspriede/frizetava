@@ -41,14 +41,12 @@ for (let off = -90; off <= 16; off++) {
   const h = db.hours[U.weekday(date)];
   if (!h.open) continue;
   const end = U.toMin(h.end);
-  const bs = h.breakStart ? U.toMin(h.breakStart) : null, be = h.breakEnd ? U.toMin(h.breakEnd) : null;
   const fill = off < 0 ? 0.78 : off < 4 ? 0.7 : 0.4;
   let t = U.toMin(h.start);
   while (t < end) {
     if (rnd() > fill) { t += pick([15, 30, 45, 60]); continue; }
     const svc = pickService();
     const e = t + svc.duration;
-    if (bs != null && t < be && e > bs) { t = be; continue; }
     if (e > end) break;
     const startTs = U.ts(date, t);
     let status = 'booked';

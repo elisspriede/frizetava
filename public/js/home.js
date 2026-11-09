@@ -50,9 +50,6 @@
     } else $('#nextFree').textContent = 'Zvani mums';
 
     const wd = new Date().getDay();
-    const th = info.hours[wd];
-    const closedToday = info.closures.some(c => c.date === todayStr());
-    $('#todayHours').textContent = th && th.open && !closedToday ? `${th.start}–${th.end}` : 'Slēgts';
 
     $('#services').innerHTML = info.services.map((x, i) => `
       <a class="glass service" href="${bookHref}${bookHref === '/pieteikties' ? '?pakalpojums=' + encodeURIComponent(x.id) : ''}" aria-label="Pieteikties: ${esc(x.name)}">
