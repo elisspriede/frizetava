@@ -1051,7 +1051,21 @@ function serveUpload(req, res, name) {
   });
 }
 
-function serveStatic(req, res, pathname) {
+// Skriptu/stilu versija: lapās saites kļūst par /js/x.js?v=<versija>, tāpēc pēc publicēšanas
+// pārlūks nekad nesavieno jaunu lapu ar vecu, kešotu skriptu.
+const ASSET_VERSION = (() => {
+  const h = crypto.createHash('sha1');
+  const walk = dir => { for (const f of fs.readdirSync(dir).sort()) { const p = path.join(dir, f); const st = fs.statSync(p); if (st.isDirectory()) walk(p); else if (/\.(js|css)$/.test(f)) h.update(f).update(fs.readFileSync(p)); } };
+  try {
+    if (typeof globalThis.__EMBEDDED_PUBLIC === 'object') for (const k of Object.keys(globalThis.__EMBEDDED_PUBLIC).sort()) { if (/\.(js|css)$/.test(k)) h.update(k).update(String(globalThis.__EMBEDDED_PUBLIC[k])); }
+    else walk(PUBLIC);
+  } catch { h.update(String(Date.now())); }
+  return h.digest('hex').slice(0, 10);
+})();
+const versionAssets = html => String(html).replace(/(<(?:script|link)\b[^>]*?\s(?:src|href)=")(\/(?:js|css)\/[^"?#]+\.(?:js|css))"/g, `$1$2?v=${ASSET_VERSION}"`);
+const cacheFor = (ext, versioned) => ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=300';
+
+function serveStatic(req, res, pathname, versioned) {
   const rel = PAGES[pathname.replace(/\/$/, '') || '/'] || pathname.replace(/^\/+/, '');
   // Viena faila būvējumā (Railway Function) faili ir iebūvēti atmiņā
   if (typeof globalThis.__EMBEDDED_PUBLIC === 'object') {
@@ -1061,8 +1075,8 @@ function serveStatic(req, res, pathname) {
       return res.end('<!doctype html><meta charset="utf-8"><title>Nav atrasts</title><p style="font-family:sans-serif;padding:40px">Lapa nav atrasta. <a href="/">Uz sākumu</a></p>');
     }
     const ext = path.extname(rel).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300' });
-    const bodyOut = typeof content === 'object' && content.b64 ? Buffer.from(content.b64, 'base64') : content;
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cacheFor(ext, versioned) });
+    const bodyOut = typeof content === 'object' && content.b64 ? Buffer.from(content.b64, 'base64') : ext === '.html' ? versionAssets(content) : content;
     return res.end(req.method === 'HEAD' ? undefined : bodyOut);
   }
   const file = path.normalize(path.join(PUBLIC, rel));
@@ -1073,7 +1087,14 @@ function serveStatic(req, res, pathname) {
       return res.end('<!doctype html><meta charset="utf-8"><title>Nav atrasts</title><p style="font-family:sans-serif;padding:40px">Lapa nav atrasta. <a href="/">Uz sākumu</a></p>');
     }
     const ext = path.extname(file).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300' });
+    if (ext === '.html') {
+      return fs.readFile(file, 'utf8', (e, txt) => {
+        if (e) { res.writeHead(500); return res.end(); }
+        res.writeHead(200, { 'Content-Type': MIME[ext], 'Cache-Control': cacheFor(ext) });
+        res.end(req.method === 'HEAD' ? undefined : versionAssets(txt));
+      });
+    }
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': cacheFor(ext, versioned) });
     const stream = fs.createReadStream(file);
     stream.on('error', () => res.destroy());
     stream.pipe(res);
@@ -1123,7 +1144,7 @@ const server = http.createServer(async (req, res) => {
   if (!pathname.startsWith('/api/')) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     if (pathname.startsWith('/uploads/')) return serveUpload(req, res, pathname.slice(9));
-    return serveStatic(req, res, pathname);
+    return serveStatic(req, res, pathname, url.searchParams.get('v') === ASSET_VERSION);
   }
 
   const sendJson = (status, obj) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
