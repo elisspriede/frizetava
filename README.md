@@ -73,7 +73,8 @@ Projektam der jebkurš hostings, kas atbalsta Node.js un **pastāvīgu disku** (
 
 - Ports: `PORT` (noklusēti 3000)
 - Datu mape: `DATA_DIR` (norādi uz pastāvīgā diska mapi)
-- Galvenā adrese: `CANONICAL_HOST` (piem., `ldstudio.lv`) — `www.` variants (vai otrādi) tiek pāradresēts uz to
+- Galvenā adrese: `CANONICAL_HOST` (piem., `ldhairstudio.lv`) — `www.` variants (vai otrādi) tiek pāradresēts uz to
+- Citas adreses, kas jāpāradresē uz galveno (piem., vecais domēns): `REDIRECT_HOSTS=ldstudio.lv,www.ldstudio.lv`
 - Laika josla: `TZ` (noklusēti `Europe/Riga`)
 - Lieto HTTPS. Ja hostings ir aiz starpniekservera, sīkdatne automātiski kļūst `Secure`; to var arī piespiest ar `COOKIE_SECURE=1`.
 

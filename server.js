@@ -12,7 +12,10 @@ const SMS = require('./lib/sms');
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const SESSION_DAYS = 30;
-const CANONICAL_HOST = String(process.env.CANONICAL_HOST || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+const normHost = h => String(h || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/[/:].*$/, '');
+const CANONICAL_HOST = normHost(process.env.CANONICAL_HOST);
+// citas adreses (piem., iepriekšējais domēns), kas tiek pāradresētas uz CANONICAL_HOST: REDIRECT_HOSTS=ldstudio.lv,www.ldstudio.lv
+const REDIRECT_HOSTS = new Set(String(process.env.REDIRECT_HOSTS || '').split(/[\s,]+/).map(normHost).filter(h => h && h !== CANONICAL_HOST));
 const db = store.load();
 const save = () => store.save();
 
@@ -1128,11 +1131,11 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'same-origin');
-  // www.ldstudio.lv ↔ ldstudio.lv: viena galvenā adrese (CANONICAL_HOST), otrs variants tiek pāradresēts
+  // viena galvenā adrese (CANONICAL_HOST): www variants un REDIRECT_HOSTS (piem., vecais domēns) tiek pāradresēti uz to
   if (CANONICAL_HOST) {
     const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
     const alt = CANONICAL_HOST.startsWith('www.') ? CANONICAL_HOST.slice(4) : 'www.' + CANONICAL_HOST;
-    if (host === alt) {
+    if (host === alt || REDIRECT_HOSTS.has(host)) {
       res.writeHead(req.method === 'GET' || req.method === 'HEAD' ? 301 : 308, { Location: `https://${CANONICAL_HOST}${req.url.startsWith('/') ? req.url : '/'}` });
       return res.end();
     }
