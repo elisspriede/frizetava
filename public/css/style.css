@@ -716,3 +716,36 @@ body.lb-open .wa-fab { display: none; }
   .about-lead { font-size: 14.5px; }
   .about-quote { font-size: 18px; padding: 7px 12px; }
 }
+
+/* SMS tekstu rediģēšana (admin) */
+.sms-texts { margin-top: 22px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255, 255, 255, .4); }
+.sms-texts > summary { list-style: none; cursor: pointer; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sms-texts > summary::-webkit-details-marker { display: none; }
+.sms-texts > summary > span:first-child { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.sms-texts > summary small { font-size: 12.5px; color: var(--muted); font-weight: 400; }
+.sms-texts > summary::after { content: ''; width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .2s; margin: 0 4px 4px 4px; flex: none; }
+.sms-texts[open] > summary::after { transform: rotate(-135deg); margin-bottom: -4px; }
+.sms-texts form { padding: 4px 18px 18px; display: grid; gap: 12px; }
+.sms-texts code { background: rgba(46, 58, 47, .08); padding: 1px 6px; border-radius: 6px; font-size: 12.5px; }
+.sms-texts h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--secondary); margin-top: 10px; }
+.tpl-fields { display: flex; flex-wrap: wrap; gap: 6px; }
+.tpl-fields button { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 10px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .9); background: rgba(255, 255, 255, .7);
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--primary); cursor: pointer; transition: .15s; }
+.tpl-fields button:hover { background: #fff; box-shadow: var(--shadow-sm); }
+.tpl-fields button small { font-weight: 400; color: var(--muted); font-size: 11.5px; }
+.tpl { display: grid; gap: 6px; }
+.tpl-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; }
+.tpl-head label { font-weight: 600; font-size: 14px; color: var(--primary); }
+.tpl textarea { min-height: 76px; height: auto; padding: 10px 14px; line-height: 1.45; resize: vertical; font-size: 14px; }
+.tpl-prev { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; padding: 9px 12px; border-radius: 12px; background: rgba(46, 58, 47, .05); font-size: 13px; line-height: 1.45; }
+.tpl-prev .tpl-text { overflow-wrap: anywhere; color: var(--ink-2); }
+.tpl-prev .tpl-meta { white-space: nowrap; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tpl-prev .tpl-meta.warn { color: var(--accent-2, #a3533a); font-weight: 600; }
+.tpl.bad .tpl-prev { background: rgba(201, 111, 79, .12); }
+.tpl.bad .tpl-prev .tpl-text { color: #8f3f25; font-weight: 500; }
+.tpl.bad textarea { border-color: var(--accent); }
+@media (max-width: 720px) {
+  .sms-texts form { padding: 0 12px 14px; }
+  .tpl-fields button small { display: none; }
+  .tpl-prev { flex-direction: column; gap: 4px; }
+}

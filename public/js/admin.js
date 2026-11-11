@@ -853,6 +853,11 @@
     'owner-new': 'Jauns pieraksts (tev)', 'owner-change': 'Pārcelts (tev)', 'owner-cancel': 'Atcelts (tev)', test: 'Testa SMS' };
   const SMS_STATUS = { sent: ['completed', 'Nosūtīta'], test: ['booked', 'Testa režīms'], failed: ['noshow', 'Kļūda'], unknown: ['noshow', 'Nav zināms'], skipped: ['cancelled', 'Izlaista'] };
 
+  // SMS tekstu rediģēšana: nesaglabātie melnraksti un atvērtais stāvoklis saglabājas, kad kartīte tiek pārzīmēta
+  const TPL_CLIENT = [['confirm', 'Apstiprinājums pēc pieteikšanās'], ['change', 'Vizīte pārcelta'], ['cancel', 'Vizīte atcelta'], ['reminder', 'Atgādinājums pirms vizītes']];
+  const TPL_OWNER = [['ownerNew', 'Jauns pieraksts'], ['ownerChange', 'Klients pārcēla vizīti'], ['ownerCancel', 'Klients atcēla vizīti']];
+  const tplDraft = {};
+  let tplOpen = false, tplSeq = 0, tplTimer = null;
   async function renderSmsCard() {
     const box = $('#smsCard'); if (!box) return;
     const c = settings.sms || {}, cs = c.credsSet || {}, o = c.owner || {}, cl = c.client || {};
@@ -896,6 +901,22 @@
           ${Object.values(cs).some(Boolean) ? '<button class="btn btn-sm btn-danger" type="button" id="smsClear">Dzēst saglabātās atslēgas</button>' : ''}
         </div>
       </form>
+      <details class="sms-texts" id="smsTexts" ${tplOpen ? 'open' : ''}>
+        <summary><span><b>SMS teksti</b><small>Maini, ko raksta automātiskās SMS</small></span>${Object.keys(c.templates || {}).length ? '<span class="badge booked">Mainīti: ' + Object.keys(c.templates).length + '</span>' : ''}</summary>
+        <form id="smsTextForm" autocomplete="off">
+          <p class="small muted">Lauki figūriekavās, piem., <code>{laiks}</code>, tiek aizstāti ar pieraksta datiem. Uzspied uz lauka, lai ievietotu to tekstā. Teksts kvadrātiekavās <code>[ ]</code> tiek izlaists, ja lauks tajā ir tukšs (piem., nav norādīta adrese).</p>
+          <div class="tpl-fields" id="tplFields">${Object.entries(c.templateFields || {}).map(([k, d]) => `<button type="button" data-f="${esc(k)}" title="${esc(d)}">{${esc(k)}}<small>${esc(d)}</small></button>`).join('')}</div>
+          ${[['Klientam', TPL_CLIENT], ['Tev (frizierei)', TPL_OWNER]].map(([title, list]) => `<h4>${title}</h4>${list.map(([t, label]) => {
+            const def = (c.templateDefaults || {})[t] || '', val = tplDraft[t] !== undefined ? tplDraft[t] : ((c.templates || {})[t] || def);
+            return `<div class="tpl" data-type="${t}">
+              <div class="tpl-head"><label for="tpl_${t}">${label}</label><button type="button" class="btn btn-sm btn-ghost ${val.trim() === def ? 'hidden' : ''}" data-reset>Atjaunot sākotnējo</button></div>
+              <textarea class="input" id="tpl_${t}" name="tpl_${t}" rows="3" maxlength="${c.templateMax || 320}">${esc(val)}</textarea>
+              <div class="tpl-prev" aria-live="polite"><span class="tpl-text muted">…</span><span class="tpl-meta"></span></div></div>`; }).join('')}`).join('')}
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px">
+            <button class="btn" type="submit">Saglabāt SMS tekstus</button>
+            <span class="tiny muted">Priekšskatījumā redzams piemērs ar izdomātu pierakstu. Īstās ziņas garums atkarīgs no pakalpojuma nosaukuma un klienta vārda.</span></div>
+        </form>
+      </details>
       <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
         <label class="field" style="flex:1;min-width:200px"><span>Testa SMS uz numuru</span><input class="input" id="smsTestTo" type="tel" placeholder="${esc(c.ownerPhone || '+371 2…')}"></label>
@@ -909,6 +930,53 @@
         : '<p class="muted small">Vēl nav nosūtīta neviena SMS.</p>'}</div>`;
 
     const f = $('#smsForm');
+    // ---- SMS teksti
+    const tf = $('#smsTextForm'), tplTypes = [...TPL_CLIENT, ...TPL_OWNER].map(x => x[0]);
+    const tplArea = t => tf.elements['tpl_' + t];
+    const tplValues = () => Object.fromEntries(tplTypes.map(t => [t, tplArea(t).value]));
+    let lastArea = tplArea('confirm');
+    const preview = async () => {
+      const seq = ++tplSeq;
+      let r; try { r = await API.post('/api/admin/sms/preview', { templates: tplValues(), ascii: f.ascii.checked }); } catch { return; }
+      if (seq !== tplSeq || !document.body.contains(tf)) return; // novecojusi atbilde
+      for (const t of tplTypes) {
+        const row = $(`.tpl[data-type="${t}"]`, tf), p = r.previews[t] || {};
+        const txt = $('.tpl-text', row), meta = $('.tpl-meta', row);
+        row.classList.toggle('bad', !p.ok);
+        txt.classList.remove('muted');
+        txt.textContent = p.ok ? p.text : p.error;
+        meta.textContent = p.ok ? `${p.length} zīmes · ${p.segments} SMS` : '';
+        meta.classList.toggle('warn', !!p.ok && p.segments > 1);
+        meta.title = p.ok && p.segments > 1 ? `Šī ziņa tiks sūtīta un apmaksāta kā ${p.segments} SMS.` : '';
+      }
+    };
+    const schedulePreview = () => { clearTimeout(tplTimer); tplTimer = setTimeout(preview, 350); };
+    const syncReset = t => $(`.tpl[data-type="${t}"] [data-reset]`, tf).classList.toggle('hidden', tplArea(t).value.trim() === ((c.templateDefaults || {})[t] || ''));
+    for (const t of tplTypes) {
+      const ta = tplArea(t);
+      ta.addEventListener('focus', () => { lastArea = ta; });
+      ta.addEventListener('input', () => { tplDraft[t] = ta.value; syncReset(t); schedulePreview(); });
+      $(`.tpl[data-type="${t}"] [data-reset]`, tf).addEventListener('click', () => { ta.value = (c.templateDefaults || {})[t] || ''; tplDraft[t] = ta.value; syncReset(t); schedulePreview(); ta.focus(); });
+    }
+    $$('#tplFields button', tf).forEach(btn => btn.addEventListener('click', () => {
+      const ta = lastArea, ins = `{${btn.dataset.f}}`, a = ta.selectionStart ?? ta.value.length, z = ta.selectionEnd ?? a;
+      ta.value = ta.value.slice(0, a) + ins + ta.value.slice(z);
+      ta.focus(); ta.setSelectionRange(a + ins.length, a + ins.length);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }));
+    $('#smsTexts').addEventListener('toggle', e => { tplOpen = e.currentTarget.open; if (tplOpen) preview(); });
+    f.ascii.addEventListener('change', () => { if (tplOpen) preview(); });
+    if (tplOpen) preview();
+    tf.addEventListener('submit', async e => {
+      e.preventDefault();
+      await withBusy(e.submitter, async () => {
+        try {
+          settings = (await API.put('/api/admin/settings', { sms: { templates: tplValues() } })).settings;
+          for (const k of Object.keys(tplDraft)) delete tplDraft[k];
+          tplOpen = true; toast('SMS teksti saglabāti.'); await renderSmsCard();
+        } catch (x) { toast(x.message, 'error'); }
+      });
+    });
     const syncProv = () => $$('.prov', box).forEach(el => el.classList.toggle('hidden', !el.classList.contains('prov-' + f.provider.value)));
     syncProv(); f.provider.addEventListener('change', syncProv);
     f.addEventListener('submit', async e => {

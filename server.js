@@ -126,23 +126,31 @@ const bookingClient = b => {
   const u = b.userId ? getUser(b.userId) : null;
   return { name: u ? u.name : (b.guestName || 'Klients'), phone: u ? u.phone : (b.guestPhone || '') };
 };
-const SMS_TEXT = {
-  confirm: (S, b) => `${S.salonName}: vizīte apstiprināta — ${cut(b.serviceName, 40)}, ${smsWhen(b.date, b.start)}.${S.address ? ' ' + cut(S.address, 40) + '.' : ''} Izmaiņām: ${S.phone}`,
-  change: (S, b) => `${S.salonName}: vizīte pārcelta uz ${smsWhen(b.date, b.start)} (${cut(b.serviceName, 40)}). Izmaiņām: ${S.phone}`,
-  cancel: (S, b) => `${S.salonName}: vizīte ${smsWhen(b.date, b.start)} ir atcelta.${CANONICAL_HOST ? ' Jauns pieraksts: ' + CANONICAL_HOST : ' Info: ' + S.phone}`,
-  reminder: (S, b) => {
-    const t = U.today(), rel = b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
-    return `${S.salonName}: atgādinām par vizīti ${rel} plkst. ${b.start} — ${cut(b.serviceName, 40)}.${S.address ? ' ' + cut(S.address, 40) + '.' : ''} Ja nevarat ierasties, zvaniet ${S.phone}`;
-  },
-  ownerNew: (S, b, c) => `Jauns pieraksts: ${cut(c.name, 30)}, ${smsPhone(c.phone)} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}${b.createdBy === 'guest' ? ' (bez konta)' : ''}${b.note ? '. Kom.: ' + cut(b.note, 60) : ''}`,
-  ownerChange: (S, b, c, old) => `Pārcelts: ${cut(c.name, 30)} — ${cut(b.serviceName, 35)}, no ${smsWhen(old.date, old.start)} uz ${smsWhen(b.date, b.start)}`,
-  ownerCancel: (S, b, c) => `Atcelts: ${cut(c.name, 30)}, ${smsPhone(c.phone)} — ${cut(b.serviceName, 35)}, ${smsWhen(b.date, b.start)}`
-};
+const SMS_TPL_LABEL = { confirm: 'Apstiprinājums', change: 'Pārcelšana', cancel: 'Atcelšana', reminder: 'Atgādinājums', ownerNew: 'Tev: jauns pieraksts', ownerChange: 'Tev: pārcelts', ownerCancel: 'Tev: atcelts' };
+// lauki, ko var ievietot SMS tekstā ({laiks}, {pakalpojums} u.c.)
+function smsVars(type, S, b, c, old) {
+  const t = U.today(), d = U.parseDate(b.date), owner = type.startsWith('owner');
+  const day = smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
+  return {
+    salons: cut(S.salonName, 60), pakalpojums: cut(b.serviceName, owner ? 35 : 40), laiks: smsWhen(b.date, b.start),
+    kad: b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : day,
+    datums: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`, plkst: b.start,
+    adrese: cut(S.address, 40), talrunis: cut(S.phone, 30), majaslapa: CANONICAL_HOST,
+    klients: cut(c.name, 30), klienta_talrunis: smsPhone(c.phone), piezime: cut(b.note, 60),
+    bez_konta: b.createdBy === 'guest' ? '(bez konta)' : '', vecais_laiks: old ? smsWhen(old.date, old.start) : ''
+  };
+}
+const smsDefaults = () => SMS.defaultTemplates(!!CANONICAL_HOST);
+// gatavs SMS teksts: admina mainītā veidne vai noklusējuma teksts
+function smsText(type, b, c, old, tplOverride) {
+  const custom = tplOverride !== undefined ? tplOverride : (sms.cfg().templates || {})[type];
+  return SMS.renderTemplate(custom || smsDefaults()[type], smsVars(type, db.settings, b, c, old));
+}
 // by: 'guest' | 'client' | 'admin'. Klientu darbības paziņo salonam; klientam — apstiprinājumi (arī par admina izmaiņām, ja ieslēgts).
 function notifyBooking(event, b, by, old) {
   try {
     if (!sms.enabled()) return;
-    const c = sms.cfg(), S = db.settings, cl = bookingClient(b);
+    const c = sms.cfg(), cl = bookingClient(b);
     // admina darbības ar jau pagājušu vizīti (vēsturiski ieraksti, labojumi) klientam neziņo
     const upcoming = U.ts(b.date, U.toMin(b.start)) > Date.now();
     const toClient = by !== 'admin' || (c.client.onAdminChanges && upcoming);
@@ -153,14 +161,14 @@ function notifyBooking(event, b, by, old) {
     }
     const markClientSms = () => { const real = db.bookings.find(x => x.id === b.id); if (real) { real.lastClientSmsAt = new Date().toISOString(); save(); } };
     if (event === 'new') {
-      if (c.client.confirm && toClient && sms.enqueue(cl.phone, SMS_TEXT.confirm(S, b), 'confirm', b.id)) markClientSms();
-      if (c.owner.onNew && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerNew(S, b, cl), 'owner-new', b.id);
+      if (c.client.confirm && toClient && sms.enqueue(cl.phone, smsText('confirm', b, cl), 'confirm', b.id)) markClientSms();
+      if (c.owner.onNew && by !== 'admin') sms.enqueue(c.ownerPhone, smsText('ownerNew', b, cl), 'owner-new', b.id);
     } else if (event === 'change') {
-      if (c.client.change && toClient && sms.enqueue(cl.phone, SMS_TEXT.change(S, b), 'change', b.id)) markClientSms();
-      if (c.owner.onChange && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerChange(S, b, cl, old), 'owner-change', b.id);
+      if (c.client.change && toClient && sms.enqueue(cl.phone, smsText('change', b, cl, old), 'change', b.id)) markClientSms();
+      if (c.owner.onChange && by !== 'admin') sms.enqueue(c.ownerPhone, smsText('ownerChange', b, cl, old), 'owner-change', b.id);
     } else if (event === 'cancel') {
-      if (c.client.cancel && toClient) sms.enqueue(cl.phone, SMS_TEXT.cancel(S, b), 'cancel', b.id);
-      if (c.owner.onCancel && by !== 'admin') sms.enqueue(c.ownerPhone, SMS_TEXT.ownerCancel(S, b, cl), 'owner-cancel', b.id);
+      if (c.client.cancel && toClient) sms.enqueue(cl.phone, smsText('cancel', b, cl), 'cancel', b.id);
+      if (c.owner.onCancel && by !== 'admin') sms.enqueue(c.ownerPhone, smsText('ownerCancel', b, cl), 'owner-cancel', b.id);
     }
   } catch (e) { console.error('SMS paziņojuma kļūda:', e.message); }
 }
@@ -186,7 +194,7 @@ function runReminders() {
       b.reminderSentAt = new Date().toISOString(); changed = true;
       if (isTest) b.reminderTest = true; else delete b.reminderTest;
       if (b.lastClientSmsAt && now - Date.parse(b.lastClientSmsAt) < 3 * 3600e3) { b.reminderSkipped = 'nesen saņēma apstiprinājumu'; continue; }
-      sms.enqueue(bookingClient(b).phone, SMS_TEXT.reminder(db.settings, b), 'reminder', b.id);
+      sms.enqueue(bookingClient(b).phone, smsText('reminder', b, bookingClient(b)), 'reminder', b.id);
     }
     if (changed) save();
   } catch (e) { console.error('Atgādinājumu kļūda:', e.message); }
@@ -814,7 +822,8 @@ route('DELETE', '/api/admin/closures/:id', 'admin', ({ params }) => { db.closure
 function settingsView() {
   const c = sms.cfg();
   const credsSet = Object.fromEntries(SMS.SECRET_KEYS.map(k => [k, !!c.creds[k]]));
-  return { ...db.settings, sms: { ...c, creds: undefined, credsSet } };
+  return { ...db.settings, sms: { ...c, creds: undefined, credsSet, templates: { ...(c.templates || {}) },
+    templateDefaults: smsDefaults(), templateFields: SMS.FIELDS, templateMax: SMS.TEMPLATE_MAX } };
 }
 route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: settingsView(), admin: publicUser(user) }));
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
@@ -870,6 +879,18 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     for (const k of ['onNew', 'onChange', 'onCancel']) if (x.owner && x.owner[k] !== undefined) next.owner[k] = !!x.owner[k];
     for (const k of ['confirm', 'change', 'cancel', 'reminder', 'onAdminChanges']) if (x.client && x.client[k] !== undefined) next.client[k] = !!x.client[k];
     if (x.client && x.client.reminderHours !== undefined) { const rh = x.client.reminderHours; next.client.reminderHours = rh === '' || rh === null ? 24 : num(rh, 2, 72, 24); }
+    if (x.templates && typeof x.templates === 'object') {
+      const tpls = { ...(cur.templates || {}) }, defs = smsDefaults();
+      for (const type of SMS.TEMPLATE_TYPES) {
+        if (x.templates[type] === undefined) continue;
+        const t = SMS.normTemplate(x.templates[type]);
+        if (!t || t === defs[type]) { delete tpls[type]; continue; } // tukšs vai nemainīts → noklusējuma teksts
+        const err = SMS.validateTemplate(type, t);
+        if (err) fail(400, `${SMS_TPL_LABEL[type]}: ${err}`);
+        tpls[type] = t;
+      }
+      next.templates = tpls;
+    }
     if (x.clearCreds) next.creds = SMS.defaults().creds;
     for (const k of SMS.SECRET_KEYS) if (x.creds && typeof x.creds[k] === 'string' && x.creds[k].trim()) {
       const v = clean(x.creds[k], 200);
@@ -891,6 +912,25 @@ route('POST', '/api/admin/sms/test', 'admin', async ({ body }) => {
   const r = await sms.sendNow(to, `${db.settings.salonName}: testa SMS no mājaslapas. Ja to saņēmāt, paziņojumi strādā.`);
   if (!r.ok) fail(502, 'SMS netika nosūtīta: ' + r.error);
   return { ok: true, segments: r.segments, text: r.text };
+});
+
+// priekšskatījums: kā ziņas izskatīsies ar parauga pierakstu (neko nesūta un nesaglabā)
+route('POST', '/api/admin/sms/preview', 'admin', ({ body }) => {
+  const c = sms.cfg(), defs = smsDefaults(), given = (body && body.templates && typeof body.templates === 'object') ? body.templates : {};
+  const ascii = body && body.ascii !== undefined ? !!body.ascii : c.ascii;
+  const svc = db.services.find(x => x.active !== false) || { name: 'Sieviešu matu griezums' };
+  const date = U.addDays(U.today(), 3);
+  const b = { serviceName: svc.name, date, start: '14:30', note: 'Gari mati', createdBy: 'guest' };
+  const cl = { name: 'Anna Bērziņa', phone: '+371 20000000' }, old = { date: U.addDays(date, -1), start: '10:00' };
+  const previews = {};
+  for (const type of SMS.TEMPLATE_TYPES) {
+    const t = given[type] === undefined ? ((c.templates || {})[type] || defs[type]) : (SMS.normTemplate(given[type]) || defs[type]);
+    const err = SMS.validateTemplate(type, t);
+    if (err) { previews[type] = { ok: false, error: err }; continue; }
+    const text = SMS.smsBody(smsText(type, b, cl, old, t), ascii);
+    previews[type] = { ok: true, text, length: [...text].length, segments: SMS.segments(text), custom: t !== defs[type] };
+  }
+  return { previews };
 });
 
 route('GET', '/api/admin/sms/log', 'admin', () => {
