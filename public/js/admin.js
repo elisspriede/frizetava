@@ -692,13 +692,13 @@
     $('#infoForm').addEventListener('submit', async e => {
       e.preventDefault();
       await withBusy(e.submitter, async () => {
-        try { settings = (await API.put('/api/admin/settings', formData(e.target))).settings; $('#brand').innerHTML = brandHTML(); $('#brandMobile').innerHTML = brandHTML(); toast('Saglabāts.'); } catch (x) { toast(x.message, 'error'); }
+        try { settings = (await API.put('/api/admin/settings', formData(e.target))).settings; $('#brand').innerHTML = brandHTML(); $('#brandMobile').innerHTML = brandHTML(); toast('Saglabāts.'); tplSync(); tplPreview(); } catch (x) { toast(x.message, 'error'); }
       });
     });
     $('#rulesForm').addEventListener('submit', async e => {
       e.preventDefault();
       await withBusy(e.submitter, async () => {
-        try { settings = (await API.put('/api/admin/settings', formData(e.target))).settings; toast('Noteikumi saglabāti.'); } catch (x) { toast(x.message, 'error'); }
+        try { settings = (await API.put('/api/admin/settings', formData(e.target))).settings; toast('Noteikumi saglabāti.'); tplSync(); } catch (x) { toast(x.message, 'error'); }
       });
     });
     $('#adminForm').addEventListener('submit', async e => {
@@ -866,15 +866,23 @@
   const tplCfg = () => settings.sms || {};
   const tplDefault = t => (tplCfg().templateDefaults || {})[t] || '';
   const tplSavedVal = t => (tplCfg().templates || {})[t] || tplDefault(t);
-  const tplNorm = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const tplNorm = v => String(v || '').replace(/\p{Cf}/gu, '').replace(/[\u115F\u1160\u3164\uFFA0\u2800\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim(); // tāpat kā serverī
   const tplArea = t => tplEl && tplEl.querySelector('#tpl_' + t);
   // melnraksts ir tikai tas, kas atšķiras no saglabātā
   const tplSetDraft = (t, v) => { if ((tplNorm(v) || tplDefault(t)) === tplSavedVal(t)) delete tplDraft[t]; else tplDraft[t] = v; };
-  const tplChanged = () => TPL_TYPES.filter(t => { const v = tplNorm(tplArea(t).value); return (v || tplDefault(t)) !== tplSavedVal(t); });
+  // mainīts ir tikai tas, ko šeit tiešām rediģēja (melnraksts) — nevis viss, kas atšķiras no servera
+  const tplChanged = () => TPL_TYPES.filter(t => tplDraft[t] !== undefined && (tplNorm(tplDraft[t]) || tplDefault(t)) !== tplSavedVal(t));
   function tplSync() {
     if (!tplEl) return;
+    // lauki bez melnraksta vienmēr rāda saglabāto (arī to, kas pa šo laiku saglabāts citā cilnē vai ierīcē)
+    for (const t of TPL_TYPES) {
+      if (tplDraft[t] !== undefined && (tplNorm(tplDraft[t]) || tplDefault(t)) === tplSavedVal(t)) delete tplDraft[t];
+      const ta = tplArea(t);
+      if (tplDraft[t] === undefined && document.activeElement !== ta && ta.value !== tplSavedVal(t)) ta.value = tplSavedVal(t);
+    }
     const n = Object.keys(tplCfg().templates || {}).length, dirty = tplChanged();
     for (const t of TPL_TYPES) {
+      $(`.tpl[data-type="${t}"]`, tplEl).classList.toggle('target', t === tplLast);
       $(`.tpl[data-type="${t}"] [data-reset]`, tplEl).classList.toggle('hidden', (tplNorm(tplArea(t).value) || tplDefault(t)) === tplDefault(t));
       $(`.tpl[data-type="${t}"]`, tplEl).classList.toggle('dirty', dirty.includes(t));
     }
@@ -930,9 +938,12 @@
     const saveCaret = ta => { tplCaret[ta.dataset.t] = [ta.selectionStart, ta.selectionEnd]; };
     for (const t of TPL_TYPES) {
       const ta = tplArea(t); ta.dataset.t = t;
-      ta.addEventListener('focus', () => { tplLast = t; });
-      for (const ev of ['keyup', 'click', 'select', 'blur']) ta.addEventListener(ev, () => saveCaret(ta));
-      ta.addEventListener('input', () => { tplSetDraft(t, ta.value); saveCaret(ta); tplSync(); tplSchedule(); });
+      // „pēdējais teksts” mainās tikai no īstas darbības tajā (klikšķis, rakstīšana, bultiņas) — ne no Tab pārejas cauri laukiem
+      const setLast = () => { if (tplLast !== t) { tplLast = t; tplSync(); } };
+      ta.addEventListener('click', () => { setLast(); saveCaret(ta); });
+      ta.addEventListener('keyup', e => { if (e.key !== 'Tab' && e.key !== 'Shift') setLast(); saveCaret(ta); });
+      for (const ev of ['select', 'blur']) ta.addEventListener(ev, () => saveCaret(ta));
+      ta.addEventListener('input', () => { tplLast = t; tplSetDraft(t, ta.value); saveCaret(ta); tplSync(); tplSchedule(); });
       $(`.tpl[data-type="${t}"] [data-reset]`, el).addEventListener('click', () => {
         ta.value = tplDefault(t); tplSetDraft(t, ta.value); tplLast = t; delete tplCaret[t]; tplSync(); tplSchedule(); ta.focus();
       });
@@ -948,7 +959,7 @@
       ta.focus(); ta.setSelectionRange(a + ins.length, a + ins.length); saveCaret(ta);
       ta.dispatchEvent(new Event('input', { bubbles: true }));
     }));
-    el.addEventListener('toggle', () => { tplOpen = el.open; if (tplOpen && !tplPending && $('.tpl-text.muted', el)) tplPreview(); });
+    el.addEventListener('toggle', () => { tplOpen = el.open; if (tplOpen && !tplPending) tplPreview(); }); // atverot vienmēr svaigs priekšskatījums
     tf.addEventListener('submit', async e => {
       e.preventDefault();
       // sūta tikai šeit mainītos tekstus — citā cilnē vai ierīcē saglabātie netiek pārrakstīti
@@ -959,8 +970,6 @@
         try {
           settings = (await API.put('/api/admin/settings', { sms: { templates: sent } })).settings;
           for (const t of changed) if (tplDraft[t] === sent[t]) delete tplDraft[t]; // kas ierakstīts saglabāšanas laikā, paliek melnrakstā
-          // pārējie lauki rāda to, kas tagad ir saglabāts (arī citā cilnē vai ierīcē mainītais)
-          for (const t of TPL_TYPES) { const ta = tplArea(t); if (ta && tplDraft[t] === undefined && document.activeElement !== ta) ta.value = tplSavedVal(t); }
           tplSync(); tplPreview(); toast('SMS teksti saglabāti.');
         } catch (x) { toast(x.message, 'error'); }
       });
@@ -977,7 +986,7 @@
     const chk = (name, on, label) => `<label class="switch"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span class="track"></span>${label}</label>`;
     const secret = (name, set, label, ph) => `<label class="field"><span>${label}</span><input class="input" type="password" name="${name}" autocomplete="off" placeholder="${set ? '•••••• saglabāts — atstāj tukšu, lai nemainītu' : esc(ph)}"></label>`;
     const prevTexts = tplEl && box.contains(tplEl) ? tplEl : null; // nesaglabātie teksti paliek savā vietā
-    const act = document.activeElement, keepFocus = prevTexts && prevTexts.contains(act) ? [act, act.selectionStart, act.selectionEnd] : null;
+    const act = document.activeElement, keepFocus = prevTexts && prevTexts.contains(act) ? [act, act.selectionStart, act.selectionEnd] : null, keepScroll = window.scrollY;
     if (prevTexts) prevTexts.remove();
     box.innerHTML = `
       <div class="card-head"><div><h3>SMS paziņojumi</h3><p class="muted small">Apstiprinājumi un atgādinājumi klientiem, paziņojumi tev par jauniem, pārceltiem un atceltiem pierakstiem.</p></div>
@@ -991,12 +1000,12 @@
           <option value="log" ${c.provider === 'log' ? 'selected' : ''}>Testa režīms (nesūta, tikai žurnālā)</option></select></label>
         <label class="field"><span>Sūtītāja vārds</span><input class="input" name="sender" maxlength="15" value="${esc(c.sender || '')}" placeholder="LDStudio"></label>
         <label class="field"><span>Tavs mobilais (paziņojumiem tev)</span><input class="input" name="ownerPhone" type="tel" value="${esc(c.ownerPhone || '')}" placeholder="+371 2…"></label>
-        <div class="full prov prov-sendberry" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
+        <div class="full prov prov-sendberry ${c.provider === 'sendberry' ? '' : 'hidden'}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
           ${secret('sendberryKey', cs.sendberryKey, 'Sendberry API key', '')}${secret('sendberryName', cs.sendberryName, 'Sendberry API name', '')}${secret('sendberryPassword', cs.sendberryPassword, 'Sendberry API password', '')}
           <p class="tiny muted" style="grid-column:1/-1">Sendberry portālā: API sadaļā izveido atslēgu — tur būs key, name un password. Sūtītāja vārdu (piem., „LDStudio”) vispirms jāreģistrē un jāapstiprina Sendberry portālā; kamēr tas nav apstiprināts, atstāj lauku „Sūtītāja vārds” tukšu.</p></div>
-        <div class="full prov prov-twilio" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+        <div class="full prov prov-twilio ${c.provider === 'twilio' ? '' : 'hidden'}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
           ${secret('twilioSid', cs.twilioSid, 'Twilio Account SID', 'AC…')}${secret('twilioToken', cs.twilioToken, 'Twilio Auth Token', '')}</div>
-        <div class="full prov prov-smsapi" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+        <div class="full prov prov-smsapi ${c.provider === 'smsapi' ? '' : 'hidden'}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
           ${secret('smsapiToken', cs.smsapiToken, 'SMSAPI OAuth tokens', '')}</div>
         <div class="field"><span>Tev (frizierei)</span><div style="display:grid;gap:8px">
           ${chk('o_onNew', o.onNew, 'Jauns pieraksts')}${chk('o_onChange', o.onChange, 'Klients pārcēla')}${chk('o_onCancel', o.onCancel, 'Klients atcēla')}</div></div>
@@ -1033,7 +1042,8 @@
       $('#smsTextsSlot', box).replaceWith(prevTexts || buildSmsTexts());
       if (keepFocus) { keepFocus[0].focus({ preventScroll: true }); if (keepFocus[1] != null) try { keepFocus[0].setSelectionRange(keepFocus[1], keepFocus[2]); } catch { /* */ } }
       tplSync();
-      if (tplOpen && (!prevTexts || $('.tpl-text.muted', tplEl))) tplPreview();
+      if (keepFocus) window.scrollTo(window.scrollX, keepScroll); // lapa nelec, kamēr tiek rakstīts tekstā
+      if (tplOpen && !tplPending) tplPreview();
     }
     f.ascii.addEventListener('change', tplPreview);
     const syncProv = () => $$('.prov', box).forEach(el => el.classList.toggle('hidden', !el.classList.contains('prov-' + f.provider.value)));

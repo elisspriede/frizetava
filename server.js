@@ -147,9 +147,11 @@ const smsDefaults = () => SMS.defaultTemplates(!!CANONICAL_HOST);
 function smsText(type, b, c, old, opt = {}) {
   const cfg = sms.cfg(), stored = (cfg.templates || {})[type];
   const custom = opt.tpl !== undefined ? opt.tpl : (typeof stored === 'string' ? stored : '');
-  const vars = smsVars(type, opt.settings || db.settings, b, c, old, opt.ascii !== undefined ? opt.ascii : cfg.ascii !== false);
-  // ja mainītais teksts šim pierakstam sanāk tukšs — sūta sākotnējo tekstu
-  return (custom && SMS.renderTemplate(custom, vars)) || SMS.renderTemplate(smsDefaults()[type], vars);
+  const ascii = opt.ascii !== undefined ? opt.ascii : cfg.ascii !== false;
+  const vars = smsVars(type, opt.settings || db.settings, b, c, old, ascii);
+  // ja mainītais teksts šim pierakstam sanāk tukšs (arī pēc garumzīmju/simbolu noņemšanas) — sūta sākotnējo tekstu
+  const text = custom ? SMS.renderTemplate(custom, vars) : '';
+  return SMS.hasContent(text, ascii) ? text : SMS.renderTemplate(smsDefaults()[type], vars);
 }
 // by: 'guest' | 'client' | 'admin'. Klientu darbības paziņo salonam; klientam — apstiprinājumi (arī par admina izmaiņām, ja ieslēgts).
 function notifyBooking(event, b, by, old) {

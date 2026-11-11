@@ -754,3 +754,10 @@ body.lb-open .wa-fab { display: none; }
 .tpl-prev .tpl-alt { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .tpl.dirty .tpl-head label::after { content: ' •'; color: var(--accent); }
 .sms-texts .tpl-fields + .tiny { margin-top: -4px; }
+.tpl.target textarea { border-color: var(--secondary); }
+@media (max-width: 720px) {
+  .sms-texts > summary { flex-wrap: wrap; }
+  .sms-texts > summary > span:first-child { flex-basis: calc(100% - 40px); }
+  .tpl-badges { order: 3; flex-basis: 100%; justify-content: flex-start; }
+  .tpl-badges:empty { display: none; }
+}
