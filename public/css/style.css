@@ -749,3 +749,8 @@ body.lb-open .wa-fab { display: none; }
   .tpl-fields button small { display: none; }
   .tpl-prev { flex-direction: column; gap: 4px; }
 }
+.tpl-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.tpl-prev > span:first-child { display: grid; gap: 4px; min-width: 0; }
+.tpl-prev .tpl-alt { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.tpl.dirty .tpl-head label::after { content: ' •'; color: var(--accent); }
+.sms-texts .tpl-fields + .tiny { margin-top: -4px; }

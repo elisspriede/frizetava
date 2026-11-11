@@ -853,11 +853,121 @@
     'owner-new': 'Jauns pieraksts (tev)', 'owner-change': 'Pārcelts (tev)', 'owner-cancel': 'Atcelts (tev)', test: 'Testa SMS' };
   const SMS_STATUS = { sent: ['completed', 'Nosūtīta'], test: ['booked', 'Testa režīms'], failed: ['noshow', 'Kļūda'], unknown: ['noshow', 'Nav zināms'], skipped: ['cancelled', 'Izlaista'] };
 
-  // SMS tekstu rediģēšana: nesaglabātie melnraksti un atvērtais stāvoklis saglabājas, kad kartīte tiek pārzīmēta
-  const TPL_CLIENT = [['confirm', 'Apstiprinājums pēc pieteikšanās'], ['change', 'Vizīte pārcelta'], ['cancel', 'Vizīte atcelta'], ['reminder', 'Atgādinājums pirms vizītes']];
-  const TPL_OWNER = [['ownerNew', 'Jauns pieraksts'], ['ownerChange', 'Klients pārcēla vizīti'], ['ownerCancel', 'Klients atcēla vizīti']];
-  const tplDraft = {};
-  let tplOpen = false, tplSeq = 0, tplTimer = null;
+  /* ---- SMS tekstu rediģēšana. Redaktors ir atsevišķs elements: kartītes pārzīmēšana (saglabāšana, testa SMS) to neaiztiek,
+     tāpēc nesaglabātie teksti, kursors un priekšskatījumi nepazūd. */
+  const TPL_GROUPS = [
+    ['client', 'Klientam', [['confirm', 'Apstiprinājums pēc pieteikšanās'], ['change', 'Vizīte pārcelta'], ['cancel', 'Vizīte atcelta'], ['reminder', 'Atgādinājums pirms vizītes']]],
+    ['owner', 'Tev (frizierei)', [['ownerNew', 'Jauns pieraksts'], ['ownerChange', 'Klients pārcēla vizīti'], ['ownerCancel', 'Klients atcēla vizīti']]]
+  ];
+  const TPL_TYPES = TPL_GROUPS.flatMap(g => g[2].map(x => x[0]));
+  const tplDraft = {};            // nesaglabātie teksti (saglabājas arī, pārejot uz citu sadaļu)
+  const tplCaret = {};            // pēdējā kursora vieta katrā tekstā
+  let tplOpen = false, tplSeq = 0, tplTimer = null, tplLast = null, tplEl = null, tplPending = false;
+  const tplCfg = () => settings.sms || {};
+  const tplDefault = t => (tplCfg().templateDefaults || {})[t] || '';
+  const tplSavedVal = t => (tplCfg().templates || {})[t] || tplDefault(t);
+  const tplNorm = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const tplArea = t => tplEl && tplEl.querySelector('#tpl_' + t);
+  // melnraksts ir tikai tas, kas atšķiras no saglabātā
+  const tplSetDraft = (t, v) => { if ((tplNorm(v) || tplDefault(t)) === tplSavedVal(t)) delete tplDraft[t]; else tplDraft[t] = v; };
+  const tplChanged = () => TPL_TYPES.filter(t => { const v = tplNorm(tplArea(t).value); return (v || tplDefault(t)) !== tplSavedVal(t); });
+  function tplSync() {
+    if (!tplEl) return;
+    const n = Object.keys(tplCfg().templates || {}).length, dirty = tplChanged();
+    for (const t of TPL_TYPES) {
+      $(`.tpl[data-type="${t}"] [data-reset]`, tplEl).classList.toggle('hidden', (tplNorm(tplArea(t).value) || tplDefault(t)) === tplDefault(t));
+      $(`.tpl[data-type="${t}"]`, tplEl).classList.toggle('dirty', dirty.includes(t));
+    }
+    $('#tplBadge', tplEl).innerHTML = (dirty.length ? '<span class="badge noshow">Nesaglabātas izmaiņas</span>' : '') + (n ? `<span class="badge booked">Mainīti: ${n}</span>` : '');
+    $('#tplDirty', tplEl).classList.toggle('hidden', !dirty.length);
+  }
+  async function tplPreview() {
+    if (!tplEl || !document.body.contains(tplEl) || !tplOpen) return;
+    const seq = ++tplSeq, el = tplEl, sf = $('#smsForm');
+    let r;
+    tplPending = true;
+    try { r = await API.post('/api/admin/sms/preview', { templates: Object.fromEntries(TPL_TYPES.map(t => [t, tplArea(t).value])), ascii: sf ? sf.ascii.checked : undefined }); } catch { return; } finally { if (seq === tplSeq) tplPending = false; }
+    if (seq !== tplSeq || el !== tplEl || !document.body.contains(el)) return; // novecojusi atbilde
+    for (const t of TPL_TYPES) {
+      const row = $(`.tpl[data-type="${t}"]`, el), p = r.previews[t] || {};
+      const txt = $('.tpl-text', row), meta = $('.tpl-meta', row), alt = $('.tpl-alt', row);
+      row.classList.toggle('bad', !p.ok);
+      txt.classList.remove('muted');
+      txt.textContent = p.ok ? p.text : p.error;
+      meta.textContent = p.ok ? `${p.length} zīmes · ${p.segments} SMS` : '';
+      meta.classList.toggle('warn', !!p.ok && p.segments > 1);
+      meta.title = p.ok && p.segments > 1 ? `Šī ziņa tiks sūtīta un apmaksāta kā ${p.segments} SMS.` : '';
+      alt.classList.toggle('hidden', !(p.ok && p.alt));
+      alt.textContent = p.ok && p.alt ? `Ja nav adreses vai komentāra: ${p.alt}` : '';
+    }
+  }
+  const tplSchedule = () => { clearTimeout(tplTimer); tplTimer = setTimeout(tplPreview, 350); };
+  function buildSmsTexts() {
+    clearTimeout(tplTimer);
+    const c = tplCfg(), ff = c.templateFieldsFor || {};
+    const el = document.createElement('details');
+    el.className = 'sms-texts'; el.id = 'smsTexts'; el.open = tplOpen;
+    el.innerHTML = `
+      <summary><span><b>SMS teksti</b><small>Maini, ko raksta automātiskās SMS</small></span><span id="tplBadge" class="tpl-badges"></span></summary>
+      <form id="smsTextForm" autocomplete="off">
+        <p class="small muted">Lauki figūriekavās, piem., <code>{laiks}</code>, tiek aizstāti ar pieraksta datiem. Ieklikšķini tekstā un uzspied uz lauka, lai to ievietotu. Teksts kvadrātiekavās <code>[ ]</code> tiek izlaists, ja lauks tajā ir tukšs (piem., nav norādīta adrese).</p>
+        ${TPL_GROUPS.map(([g, title, list]) => {
+          const fields = Object.keys(c.templateFields || {}).filter(k => list.some(([t]) => (ff[t] || []).includes(k)));
+          return `<h4>${title}</h4>
+          <div class="tpl-fields" data-group="${g}">${fields.map(k => `<button type="button" data-f="${esc(k)}" title="${esc(c.templateFields[k])}">{${esc(k)}}<small>${esc(c.templateFields[k])}</small></button>`).join('')}</div>
+          ${g === 'client' ? '<p class="tiny muted">Ziņās klientam <code>{klients}</code> ir tikai klienta vārds (bez uzvārda). Klienta komentāru šajās ziņās ievietot nevar.</p>' : ''}
+          ${list.map(([t, label]) => `<div class="tpl" data-type="${t}" data-group="${g}">
+            <div class="tpl-head"><label for="tpl_${t}">${label}</label><button type="button" class="btn btn-sm btn-ghost hidden" data-reset>Atjaunot sākotnējo</button></div>
+            <textarea class="input" id="tpl_${t}" name="tpl_${t}" rows="3" maxlength="${c.templateMax || 320}">${esc(tplDraft[t] !== undefined ? tplDraft[t] : tplSavedVal(t))}</textarea>
+            <div class="tpl-prev" aria-live="polite"><span><span class="tpl-text muted">…</span><span class="tpl-alt hidden"></span></span><span class="tpl-meta"></span></div></div>`).join('')}`; }).join('')}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px">
+          <button class="btn" type="submit">Saglabāt SMS tekstus</button>
+          <span class="badge noshow hidden" id="tplDirty">Nesaglabātas izmaiņas</span>
+          <span class="tiny muted">Priekšskatījumā redzams piemērs ar izdomātu pierakstu. Īstās ziņas garums atkarīgs no pakalpojuma nosaukuma.</span></div>
+      </form>`;
+    tplEl = el;
+    const tf = $('#smsTextForm', el);
+    const saveCaret = ta => { tplCaret[ta.dataset.t] = [ta.selectionStart, ta.selectionEnd]; };
+    for (const t of TPL_TYPES) {
+      const ta = tplArea(t); ta.dataset.t = t;
+      ta.addEventListener('focus', () => { tplLast = t; });
+      for (const ev of ['keyup', 'click', 'select', 'blur']) ta.addEventListener(ev, () => saveCaret(ta));
+      ta.addEventListener('input', () => { tplSetDraft(t, ta.value); saveCaret(ta); tplSync(); tplSchedule(); });
+      $(`.tpl[data-type="${t}"] [data-reset]`, el).addEventListener('click', () => {
+        ta.value = tplDefault(t); tplSetDraft(t, ta.value); tplLast = t; delete tplCaret[t]; tplSync(); tplSchedule(); ta.focus();
+      });
+    }
+    $$('.tpl-fields', el).forEach(row => row.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-f]'); if (!btn) return;
+      // lauks tiek ievietots tekstā, kurā pēdējoreiz strādāts (šajā pašā grupā)
+      const ta = tplLast && tplArea(tplLast);
+      if (!ta || ta.closest('.tpl').dataset.group !== row.dataset.group) return toast('Vispirms ieklikšķini tekstā, kurā ievietot lauku.', 'error');
+      const ins = `{${btn.dataset.f}}`, [a, z] = tplCaret[tplLast] || [ta.value.length, ta.value.length];
+      if (ta.value.length - (z - a) + ins.length > ta.maxLength) return toast('Teksts būtu par garu.', 'error');
+      ta.value = ta.value.slice(0, a) + ins + ta.value.slice(z);
+      ta.focus(); ta.setSelectionRange(a + ins.length, a + ins.length); saveCaret(ta);
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }));
+    el.addEventListener('toggle', () => { tplOpen = el.open; if (tplOpen && !tplPending && $('.tpl-text.muted', el)) tplPreview(); });
+    tf.addEventListener('submit', async e => {
+      e.preventDefault();
+      // sūta tikai šeit mainītos tekstus — citā cilnē vai ierīcē saglabātie netiek pārrakstīti
+      const changed = tplChanged();
+      if (!changed.length) return toast('Nav nesaglabātu izmaiņu.');
+      const sent = Object.fromEntries(changed.map(t => [t, tplArea(t).value]));
+      await withBusy(e.submitter, async () => {
+        try {
+          settings = (await API.put('/api/admin/settings', { sms: { templates: sent } })).settings;
+          for (const t of changed) if (tplDraft[t] === sent[t]) delete tplDraft[t]; // kas ierakstīts saglabāšanas laikā, paliek melnrakstā
+          // pārējie lauki rāda to, kas tagad ir saglabāts (arī citā cilnē vai ierīcē mainītais)
+          for (const t of TPL_TYPES) { const ta = tplArea(t); if (ta && tplDraft[t] === undefined && document.activeElement !== ta) ta.value = tplSavedVal(t); }
+          tplSync(); tplPreview(); toast('SMS teksti saglabāti.');
+        } catch (x) { toast(x.message, 'error'); }
+      });
+    });
+    tplSync();
+    return el;
+  }
   async function renderSmsCard() {
     const box = $('#smsCard'); if (!box) return;
     const c = settings.sms || {}, cs = c.credsSet || {}, o = c.owner || {}, cl = c.client || {};
@@ -866,6 +976,9 @@
     const state = !c.provider ? ['cancelled', 'Izslēgti'] : c.provider === 'log' ? ['booked', 'Testa režīms — SMS netiek sūtītas'] : ['completed', 'Ieslēgti'];
     const chk = (name, on, label) => `<label class="switch"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span class="track"></span>${label}</label>`;
     const secret = (name, set, label, ph) => `<label class="field"><span>${label}</span><input class="input" type="password" name="${name}" autocomplete="off" placeholder="${set ? '•••••• saglabāts — atstāj tukšu, lai nemainītu' : esc(ph)}"></label>`;
+    const prevTexts = tplEl && box.contains(tplEl) ? tplEl : null; // nesaglabātie teksti paliek savā vietā
+    const act = document.activeElement, keepFocus = prevTexts && prevTexts.contains(act) ? [act, act.selectionStart, act.selectionEnd] : null;
+    if (prevTexts) prevTexts.remove();
     box.innerHTML = `
       <div class="card-head"><div><h3>SMS paziņojumi</h3><p class="muted small">Apstiprinājumi un atgādinājumi klientiem, paziņojumi tev par jauniem, pārceltiem un atceltiem pierakstiem.</p></div>
         <span class="badge ${state[0]}">${state[1]}</span></div>
@@ -901,22 +1014,7 @@
           ${Object.values(cs).some(Boolean) ? '<button class="btn btn-sm btn-danger" type="button" id="smsClear">Dzēst saglabātās atslēgas</button>' : ''}
         </div>
       </form>
-      <details class="sms-texts" id="smsTexts" ${tplOpen ? 'open' : ''}>
-        <summary><span><b>SMS teksti</b><small>Maini, ko raksta automātiskās SMS</small></span>${Object.keys(c.templates || {}).length ? '<span class="badge booked">Mainīti: ' + Object.keys(c.templates).length + '</span>' : ''}</summary>
-        <form id="smsTextForm" autocomplete="off">
-          <p class="small muted">Lauki figūriekavās, piem., <code>{laiks}</code>, tiek aizstāti ar pieraksta datiem. Uzspied uz lauka, lai ievietotu to tekstā. Teksts kvadrātiekavās <code>[ ]</code> tiek izlaists, ja lauks tajā ir tukšs (piem., nav norādīta adrese).</p>
-          <div class="tpl-fields" id="tplFields">${Object.entries(c.templateFields || {}).map(([k, d]) => `<button type="button" data-f="${esc(k)}" title="${esc(d)}">{${esc(k)}}<small>${esc(d)}</small></button>`).join('')}</div>
-          ${[['Klientam', TPL_CLIENT], ['Tev (frizierei)', TPL_OWNER]].map(([title, list]) => `<h4>${title}</h4>${list.map(([t, label]) => {
-            const def = (c.templateDefaults || {})[t] || '', val = tplDraft[t] !== undefined ? tplDraft[t] : ((c.templates || {})[t] || def);
-            return `<div class="tpl" data-type="${t}">
-              <div class="tpl-head"><label for="tpl_${t}">${label}</label><button type="button" class="btn btn-sm btn-ghost ${val.trim() === def ? 'hidden' : ''}" data-reset>Atjaunot sākotnējo</button></div>
-              <textarea class="input" id="tpl_${t}" name="tpl_${t}" rows="3" maxlength="${c.templateMax || 320}">${esc(val)}</textarea>
-              <div class="tpl-prev" aria-live="polite"><span class="tpl-text muted">…</span><span class="tpl-meta"></span></div></div>`; }).join('')}`).join('')}
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px">
-            <button class="btn" type="submit">Saglabāt SMS tekstus</button>
-            <span class="tiny muted">Priekšskatījumā redzams piemērs ar izdomātu pierakstu. Īstās ziņas garums atkarīgs no pakalpojuma nosaukuma un klienta vārda.</span></div>
-        </form>
-      </details>
+      <div id="smsTextsSlot"></div>
       <hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
         <label class="field" style="flex:1;min-width:200px"><span>Testa SMS uz numuru</span><input class="input" id="smsTestTo" type="tel" placeholder="${esc(c.ownerPhone || '+371 2…')}"></label>
@@ -930,53 +1028,14 @@
         : '<p class="muted small">Vēl nav nosūtīta neviena SMS.</p>'}</div>`;
 
     const f = $('#smsForm');
-    // ---- SMS teksti
-    const tf = $('#smsTextForm'), tplTypes = [...TPL_CLIENT, ...TPL_OWNER].map(x => x[0]);
-    const tplArea = t => tf.elements['tpl_' + t];
-    const tplValues = () => Object.fromEntries(tplTypes.map(t => [t, tplArea(t).value]));
-    let lastArea = tplArea('confirm');
-    const preview = async () => {
-      const seq = ++tplSeq;
-      let r; try { r = await API.post('/api/admin/sms/preview', { templates: tplValues(), ascii: f.ascii.checked }); } catch { return; }
-      if (seq !== tplSeq || !document.body.contains(tf)) return; // novecojusi atbilde
-      for (const t of tplTypes) {
-        const row = $(`.tpl[data-type="${t}"]`, tf), p = r.previews[t] || {};
-        const txt = $('.tpl-text', row), meta = $('.tpl-meta', row);
-        row.classList.toggle('bad', !p.ok);
-        txt.classList.remove('muted');
-        txt.textContent = p.ok ? p.text : p.error;
-        meta.textContent = p.ok ? `${p.length} zīmes · ${p.segments} SMS` : '';
-        meta.classList.toggle('warn', !!p.ok && p.segments > 1);
-        meta.title = p.ok && p.segments > 1 ? `Šī ziņa tiks sūtīta un apmaksāta kā ${p.segments} SMS.` : '';
-      }
-    };
-    const schedulePreview = () => { clearTimeout(tplTimer); tplTimer = setTimeout(preview, 350); };
-    const syncReset = t => $(`.tpl[data-type="${t}"] [data-reset]`, tf).classList.toggle('hidden', tplArea(t).value.trim() === ((c.templateDefaults || {})[t] || ''));
-    for (const t of tplTypes) {
-      const ta = tplArea(t);
-      ta.addEventListener('focus', () => { lastArea = ta; });
-      ta.addEventListener('input', () => { tplDraft[t] = ta.value; syncReset(t); schedulePreview(); });
-      $(`.tpl[data-type="${t}"] [data-reset]`, tf).addEventListener('click', () => { ta.value = (c.templateDefaults || {})[t] || ''; tplDraft[t] = ta.value; syncReset(t); schedulePreview(); ta.focus(); });
+    // SMS tekstu redaktors: esošais elements tiek pārlikts jaunajā kartītē (ar fokusu un kursoru), nevis būvēts no jauna
+    {
+      $('#smsTextsSlot', box).replaceWith(prevTexts || buildSmsTexts());
+      if (keepFocus) { keepFocus[0].focus({ preventScroll: true }); if (keepFocus[1] != null) try { keepFocus[0].setSelectionRange(keepFocus[1], keepFocus[2]); } catch { /* */ } }
+      tplSync();
+      if (tplOpen && (!prevTexts || $('.tpl-text.muted', tplEl))) tplPreview();
     }
-    $$('#tplFields button', tf).forEach(btn => btn.addEventListener('click', () => {
-      const ta = lastArea, ins = `{${btn.dataset.f}}`, a = ta.selectionStart ?? ta.value.length, z = ta.selectionEnd ?? a;
-      ta.value = ta.value.slice(0, a) + ins + ta.value.slice(z);
-      ta.focus(); ta.setSelectionRange(a + ins.length, a + ins.length);
-      ta.dispatchEvent(new Event('input', { bubbles: true }));
-    }));
-    $('#smsTexts').addEventListener('toggle', e => { tplOpen = e.currentTarget.open; if (tplOpen) preview(); });
-    f.ascii.addEventListener('change', () => { if (tplOpen) preview(); });
-    if (tplOpen) preview();
-    tf.addEventListener('submit', async e => {
-      e.preventDefault();
-      await withBusy(e.submitter, async () => {
-        try {
-          settings = (await API.put('/api/admin/settings', { sms: { templates: tplValues() } })).settings;
-          for (const k of Object.keys(tplDraft)) delete tplDraft[k];
-          tplOpen = true; toast('SMS teksti saglabāti.'); await renderSmsCard();
-        } catch (x) { toast(x.message, 'error'); }
-      });
-    });
+    f.ascii.addEventListener('change', tplPreview);
     const syncProv = () => $$('.prov', box).forEach(el => el.classList.toggle('hidden', !el.classList.contains('prov-' + f.provider.value)));
     syncProv(); f.provider.addEventListener('change', syncProv);
     f.addEventListener('submit', async e => {

@@ -65,6 +65,8 @@ frizierei — jauns pieraksts / klients pārcēla / klients atcēla. Katru veidu
 **SMS teksti.** Sadaļā „SMS teksti” katras automātiskās ziņas tekstu var mainīt. Lauki figūriekavās (`{laiks}`,
 `{pakalpojums}`, `{klients}` u.c.) tiek aizstāti ar pieraksta datiem; teksts kvadrātiekavās `[ ... ]` tiek izlaists, ja lauks
 tajā ir tukšs. Zem katra teksta redzams priekšskatījums ar zīmju un SMS skaitu. Tukšs teksts = sākotnējais teksts.
+Ziņās klientam `{klients}` ir tikai vārds (burti), un klienta komentāru tajās ievietot nevar — tā neviens nevar ar salona
+vārdu nosūtīt savu tekstu uz svešu numuru. Ja mainītais teksts kādam pierakstam sanāk tukšs, tiek sūtīts sākotnējais.
 
 Drošība un izmaksas: SMS sūta tikai uz LV, LT un EE numuriem; kopējais limits 60 SMS stundā / 300 diennaktī; viens klients
 var izraisīt ne vairāk kā 6 SMS stundā; klients pats var pārcelt pierakstu ne vairāk kā 3 reizes. Pēc noklusējuma teksts bez

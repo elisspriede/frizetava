@@ -128,23 +128,28 @@ const bookingClient = b => {
 };
 const SMS_TPL_LABEL = { confirm: 'Apstiprinājums', change: 'Pārcelšana', cancel: 'Atcelšana', reminder: 'Atgādinājums', ownerNew: 'Tev: jauns pieraksts', ownerChange: 'Tev: pārcelts', ownerCancel: 'Tev: atcelts' };
 // lauki, ko var ievietot SMS tekstā ({laiks}, {pakalpojums} u.c.)
-function smsVars(type, S, b, c, old) {
-  const t = U.today(), d = U.parseDate(b.date), owner = type.startsWith('owner');
+function smsVars(type, S, b, c, old, ascii) {
+  const t = U.today(), d = U.parseDate(b.date), owner = SMS.isOwnerType(type);
   const day = smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
   return {
-    salons: cut(S.salonName, 60), pakalpojums: cut(b.serviceName, owner ? 35 : 40), laiks: smsWhen(b.date, b.start),
+    salons: cut(S.salonName, 200), pakalpojums: cut(b.serviceName, owner ? 35 : 40), laiks: smsWhen(b.date, b.start),
     kad: b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : day,
     datums: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`, plkst: b.start,
-    adrese: cut(S.address, 40), talrunis: cut(S.phone, 30), majaslapa: CANONICAL_HOST,
-    klients: cut(c.name, 30), klienta_talrunis: smsPhone(c.phone), piezime: cut(b.note, 60),
-    bez_konta: b.createdBy === 'guest' ? '(bez konta)' : '', vecais_laiks: old ? smsWhen(old.date, old.start) : ''
+    adrese: cut(S.address, 40), talrunis: cut(S.phone, 200), majaslapa: CANONICAL_HOST,
+    // klientam — tikai vārds (burti); frizierei — pilns vārds, tālrunis un komentārs
+    klients: owner ? cut(c.name, 30) : SMS.clientFirstName(c.name, ascii),
+    ...(owner ? { klienta_talrunis: smsPhone(c.phone), piezime: cut(b.note, 60), bez_konta: b.createdBy === 'guest' ? '(bez konta)' : '' } : {}),
+    vecais_laiks: old ? smsWhen(old.date, old.start) : ''
   };
 }
 const smsDefaults = () => SMS.defaultTemplates(!!CANONICAL_HOST);
 // gatavs SMS teksts: admina mainītā veidne vai noklusējuma teksts
-function smsText(type, b, c, old, tplOverride) {
-  const custom = tplOverride !== undefined ? tplOverride : (sms.cfg().templates || {})[type];
-  return SMS.renderTemplate(custom || smsDefaults()[type], smsVars(type, db.settings, b, c, old));
+function smsText(type, b, c, old, opt = {}) {
+  const cfg = sms.cfg(), stored = (cfg.templates || {})[type];
+  const custom = opt.tpl !== undefined ? opt.tpl : (typeof stored === 'string' ? stored : '');
+  const vars = smsVars(type, opt.settings || db.settings, b, c, old, opt.ascii !== undefined ? opt.ascii : cfg.ascii !== false);
+  // ja mainītais teksts šim pierakstam sanāk tukšs — sūta sākotnējo tekstu
+  return (custom && SMS.renderTemplate(custom, vars)) || SMS.renderTemplate(smsDefaults()[type], vars);
 }
 // by: 'guest' | 'client' | 'admin'. Klientu darbības paziņo salonam; klientam — apstiprinājumi (arī par admina izmaiņām, ja ieslēgts).
 function notifyBooking(event, b, by, old) {
@@ -822,8 +827,10 @@ route('DELETE', '/api/admin/closures/:id', 'admin', ({ params }) => { db.closure
 function settingsView() {
   const c = sms.cfg();
   const credsSet = Object.fromEntries(SMS.SECRET_KEYS.map(k => [k, !!c.creds[k]]));
-  return { ...db.settings, sms: { ...c, creds: undefined, credsSet, templates: { ...(c.templates || {}) },
-    templateDefaults: smsDefaults(), templateFields: SMS.FIELDS, templateMax: SMS.TEMPLATE_MAX } };
+  const tpls = Object.fromEntries(SMS.TEMPLATE_TYPES.filter(t => c.templates && typeof c.templates[t] === 'string' && c.templates[t]).map(t => [t, c.templates[t]]));
+  return { ...db.settings, sms: { ...c, creds: undefined, credsSet, templates: tpls,
+    templateDefaults: smsDefaults(), templateFields: SMS.FIELDS, templateMax: SMS.TEMPLATE_MAX,
+    templateFieldsFor: Object.fromEntries(SMS.TEMPLATE_TYPES.map(t => [t, SMS.fieldsFor(t)])) } };
 }
 route('GET', '/api/admin/settings', 'admin', ({ user }) => ({ settings: settingsView(), admin: publicUser(user) }));
 route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
@@ -880,9 +887,11 @@ route('PUT', '/api/admin/settings', 'admin', ({ body }) => {
     for (const k of ['confirm', 'change', 'cancel', 'reminder', 'onAdminChanges']) if (x.client && x.client[k] !== undefined) next.client[k] = !!x.client[k];
     if (x.client && x.client.reminderHours !== undefined) { const rh = x.client.reminderHours; next.client.reminderHours = rh === '' || rh === null ? 24 : num(rh, 2, 72, 24); }
     if (x.templates && typeof x.templates === 'object') {
-      const tpls = { ...(cur.templates || {}) }, defs = smsDefaults();
+      const tpls = {}, defs = smsDefaults();
+      for (const t of SMS.TEMPLATE_TYPES) if (cur.templates && typeof cur.templates[t] === 'string' && cur.templates[t]) tpls[t] = cur.templates[t];
       for (const type of SMS.TEMPLATE_TYPES) {
-        if (x.templates[type] === undefined) continue;
+        if (!Object.prototype.hasOwnProperty.call(x.templates, type) || x.templates[type] === undefined) continue;
+        if (x.templates[type] !== null && typeof x.templates[type] !== 'string') fail(400, `${SMS_TPL_LABEL[type]}: nederīgs teksts.`);
         const t = SMS.normTemplate(x.templates[type]);
         if (!t || t === defs[type]) { delete tpls[type]; continue; } // tukšs vai nemainīts → noklusējuma teksts
         const err = SMS.validateTemplate(type, t);
@@ -922,13 +931,18 @@ route('POST', '/api/admin/sms/preview', 'admin', ({ body }) => {
   const date = U.addDays(U.today(), 3);
   const b = { serviceName: svc.name, date, start: '14:30', note: 'Gari mati', createdBy: 'guest' };
   const cl = { name: 'Anna Bērziņa', phone: '+371 20000000' }, old = { date: U.addDays(date, -1), start: '10:00' };
+  // otrs variants: kad neobligātie lauki ir tukši (nav komentāra, klients ar kontu, nav adreses)
+  const bare = { ...b, note: '', createdBy: 'client' }, noAddr = { ...db.settings, address: '' };
   const previews = {};
   for (const type of SMS.TEMPLATE_TYPES) {
-    const t = given[type] === undefined ? ((c.templates || {})[type] || defs[type]) : (SMS.normTemplate(given[type]) || defs[type]);
+    const g = Object.prototype.hasOwnProperty.call(given, type) ? given[type] : undefined;
+    const stored = (c.templates || {})[type];
+    const t = g === undefined ? ((typeof stored === 'string' && stored) || defs[type]) : ((typeof g === 'string' && SMS.normTemplate(g)) || defs[type]);
     const err = SMS.validateTemplate(type, t);
     if (err) { previews[type] = { ok: false, error: err }; continue; }
-    const text = SMS.smsBody(smsText(type, b, cl, old, t), ascii);
-    previews[type] = { ok: true, text, length: [...text].length, segments: SMS.segments(text), custom: t !== defs[type] };
+    const text = SMS.smsBody(smsText(type, b, cl, old, { tpl: t, ascii }), ascii);
+    const alt = SMS.smsBody(smsText(type, bare, cl, old, { tpl: t, ascii, settings: noAddr }), ascii);
+    previews[type] = { ok: true, text, length: [...text].length, segments: SMS.segments(text), custom: t !== defs[type], alt: alt !== text ? alt : undefined };
   }
   return { previews };
 });
