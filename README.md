@@ -65,6 +65,8 @@ frizierei — jauns pieraksts / klients pārcēla / klients atcēla. Katru veidu
 **SMS teksti.** Sadaļā „SMS teksti” katras automātiskās ziņas tekstu var mainīt. Lauki figūriekavās (`{laiks}`,
 `{pakalpojums}`, `{klients}` u.c.) tiek aizstāti ar pieraksta datiem; teksts kvadrātiekavās `[ ... ]` tiek izlaists, ja lauks
 tajā ir tukšs. Zem katra teksta redzams priekšskatījums ar zīmju un SMS skaitu. Tukšs teksts = sākotnējais teksts.
+Jaunas rindas tiek nosūtītas tā, kā ierakstītas. Garumzīmes un emoji tiek sūtīti tikai ar izslēgtu „Bez garumzīmēm”
+(tad 1 SMS = 70 zīmes, emoji aizņem 2).
 Ziņās klientam `{klients}` ir tikai vārds (burti), un klienta komentāru tajās ievietot nevar — tā neviens nevar ar salona
 vārdu nosūtīt savu tekstu uz svešu numuru. Ja mainītais teksts kādam pierakstam sanāk tukšs, tiek sūtīts sākotnējais.
 

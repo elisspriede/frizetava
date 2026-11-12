@@ -761,3 +761,4 @@ body.lb-open .wa-fab { display: none; }
   .tpl-badges { order: 3; flex-basis: 100%; justify-content: flex-start; }
   .tpl-badges:empty { display: none; }
 }
+.tpl-prev .tpl-text, .tpl-prev .tpl-alt { white-space: pre-line; }

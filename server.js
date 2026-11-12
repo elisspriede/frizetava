@@ -944,7 +944,7 @@ route('POST', '/api/admin/sms/preview', 'admin', ({ body }) => {
     if (err) { previews[type] = { ok: false, error: err }; continue; }
     const text = SMS.smsBody(smsText(type, b, cl, old, { tpl: t, ascii }), ascii);
     const alt = SMS.smsBody(smsText(type, bare, cl, old, { tpl: t, ascii, settings: noAddr }), ascii);
-    previews[type] = { ok: true, text, length: [...text].length, segments: SMS.segments(text), custom: t !== defs[type], alt: alt !== text ? alt : undefined };
+    previews[type] = { ok: true, text, length: SMS.smsLength(text), segments: SMS.segments(text), unicode: !SMS.isGsm(text), custom: t !== defs[type], alt: alt !== text ? alt : undefined };
   }
   return { previews };
 });
