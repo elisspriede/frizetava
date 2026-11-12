@@ -120,7 +120,8 @@ function publicInfo() {
 const sms = SMS.createSms({ getDb: () => db, save: () => save() });
 const SMS_DAYS = ['svētd.', 'pirmd.', 'otrd.', 'trešd.', 'ceturtd.', 'piektd.', 'sestd.'];
 const smsWhen = (date, start) => { const d = U.parseDate(date); return `${SMS_DAYS[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}. plkst. ${start}`; };
-const cut = (v, n) => { const t = String(v || '').replace(/[\r\n\t\u2028\u2029]+/g, ' ').replace(/\s{2,}/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+// vienā rindā, bez vadības zīmēm; saīsina pa veselām zīmēm (nepārgriež emoji)
+const cut = (v, n) => { const t = String(v || '').replace(/[\s\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ').trim(), a = [...t]; return a.length > n ? a.slice(0, n - 1).join('') + '…' : t; };
 const smsPhone = p => SMS.toE164(p) || cut(String(p || '').replace(/[^\d+ ]/g, ''), 20);
 const bookingClient = b => {
   const u = b.userId ? getUser(b.userId) : null;

@@ -762,3 +762,4 @@ body.lb-open .wa-fab { display: none; }
   .tpl-badges:empty { display: none; }
 }
 .tpl-prev .tpl-text, .tpl-prev .tpl-alt { white-space: pre-line; }
+.tpl-note { padding: 9px 12px; border-radius: 12px; background: rgba(201, 111, 79, .12); color: #8f3f25; font-weight: 500; }

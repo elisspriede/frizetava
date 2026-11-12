@@ -866,15 +866,20 @@
   const tplCfg = () => settings.sms || {};
   const tplDefault = t => (tplCfg().templateDefaults || {})[t] || '';
   const tplSavedVal = t => (tplCfg().templates || {})[t] || tplDefault(t);
-  const tplNorm = v => String(v || '').replace(/\r\n?|[\u000b\u000c\u0085\u2028\u2029]/g, '\n').replace(/(?!\u200d)\p{Cf}/gu, '')
+  const tplNorm = v => String(v || '').replace(/\r\n?|[\u000b\u000c\u0085\u2028\u2029]/g, '\n').replace(/(?![\u200d\u{E0020}-\u{E007F}])\p{Cf}/gu, '').replace(/(\u{1F3F4}[\u{E0020}-\u{E007E}]+\u{E007F})|[\u{E0000}-\u{E007F}]+/gu, '$1')
     .replace(/[\u115F\u1160\u3164\uFFA0\u2800\u0000-\u0009\u000e-\u001f\u007f]/g, ' ').replace(/\u200d+(?=\s|$)|(^|\s)\u200d+/g, '$1').replace(/[^\S\n]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim(); // tāpat kā serverī
   const tplArea = t => tplEl && tplEl.querySelector('#tpl_' + t);
   // melnraksts ir tikai tas, kas atšķiras no saglabātā
   const tplSetDraft = (t, v) => { if ((tplNorm(v) || tplDefault(t)) === tplSavedVal(t)) delete tplDraft[t]; else tplDraft[t] = v; };
   // mainīts ir tikai tas, ko šeit tiešām rediģēja (melnraksts) — nevis viss, kas atšķiras no servera
   const tplChanged = () => TPL_TYPES.filter(t => tplDraft[t] !== undefined && (tplNorm(tplDraft[t]) || tplDefault(t)) !== tplSavedVal(t));
+  // slēdzis „Bez garumzīmēm” galvenajā formā ir mainīts, bet vēl nav saglabāts → jaunā vērtība; citādi null
+  const tplAsciiPending = () => { const sf = $('#smsForm'); if (!sf || !sf.ascii) return null; return sf.ascii.checked === (tplCfg().ascii !== false) ? null : sf.ascii.checked; };
   function tplSync() {
     if (!tplEl) return;
+    const ap = tplAsciiPending();
+    $('#tplAsciiNote', tplEl).classList.toggle('hidden', ap === null);
+    if (ap !== null) $('#tplAsciiNote', tplEl).textContent = `Slēdzis „Bez garumzīmēm” ir ${ap ? 'ieslēgts' : 'izslēgts'}, bet vēl nav saglabāts. Priekšskatījums jau rāda jauno variantu; tas tiks saglabāts kopā ar tekstiem.`;
     // lauki bez melnraksta vienmēr rāda saglabāto (arī to, kas pa šo laiku saglabāts citā cilnē vai ierīcē)
     for (const t of TPL_TYPES) {
       if (tplDraft[t] !== undefined && (tplNorm(tplDraft[t]) || tplDefault(t)) === tplSavedVal(t)) delete tplDraft[t];
@@ -888,7 +893,7 @@
       $(`.tpl[data-type="${t}"]`, tplEl).classList.toggle('dirty', dirty.includes(t));
     }
     $('#tplBadge', tplEl).innerHTML = (dirty.length ? '<span class="badge noshow">Nesaglabātas izmaiņas</span>' : '') + (n ? `<span class="badge booked">Mainīti: ${n}</span>` : '');
-    $('#tplDirty', tplEl).classList.toggle('hidden', !dirty.length);
+    $('#tplDirty', tplEl).classList.toggle('hidden', !dirty.length && ap === null);
   }
   async function tplPreview() {
     if (!tplEl || !document.body.contains(tplEl) || !tplOpen) return;
@@ -921,6 +926,7 @@
       <form id="smsTextForm" autocomplete="off">
         <p class="small muted">Lauki figūriekavās, piem., <code>{laiks}</code>, tiek aizstāti ar pieraksta datiem. Ieklikšķini tekstā un uzspied uz lauka, lai to ievietotu. Teksts kvadrātiekavās <code>[ ]</code> tiek izlaists, ja lauks tajā ir tukšs (piem., nav norādīta adrese).</p>
         <p class="small muted">Jaunas rindas tiek nosūtītas tā, kā tās ierakstītas. Garumzīmes un emoji tiek sūtīti tikai tad, ja augstāk ir izslēgts „Bez garumzīmēm”; tad vienā SMS ietilpst 70 zīmes (emoji aizņem 2), nevis 160.</p>
+        <p class="small tpl-note hidden" id="tplAsciiNote" role="status"></p>
         ${TPL_GROUPS.map(([g, title, list]) => {
           const fields = Object.keys(c.templateFields || {}).filter(k => list.some(([t]) => (ff[t] || []).includes(k)));
           return `<h4>${title}</h4>
@@ -965,12 +971,13 @@
     tf.addEventListener('submit', async e => {
       e.preventDefault();
       // sūta tikai šeit mainītos tekstus — citā cilnē vai ierīcē saglabātie netiek pārrakstīti
-      const changed = tplChanged();
-      if (!changed.length) return toast('Nav nesaglabātu izmaiņu.');
+      const changed = tplChanged(), asciiNew = tplAsciiPending();
+      if (!changed.length && asciiNew === null) return toast('Nav nesaglabātu izmaiņu.');
       const sent = Object.fromEntries(changed.map(t => [t, tplArea(t).value]));
       await withBusy(e.submitter, async () => {
         try {
-          settings = (await API.put('/api/admin/settings', { sms: { templates: sent } })).settings;
+          // slēdzis „Bez garumzīmēm” tiek saglabāts kopā ar tekstiem — priekšskatījums rāda tieši to, kas tiks sūtīts
+          settings = (await API.put('/api/admin/settings', { sms: { templates: sent, ...(asciiNew === null ? {} : { ascii: asciiNew }) } })).settings;
           for (const t of changed) if (tplDraft[t] === sent[t]) delete tplDraft[t]; // kas ierakstīts saglabāšanas laikā, paliek melnrakstā
           tplSync(); tplPreview(); toast('SMS teksti saglabāti.');
         } catch (x) { toast(x.message, 'error'); }
@@ -989,7 +996,7 @@
     const chk = (name, on, label) => `<label class="switch"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span class="track"></span>${label}</label>`;
     const secret = (name, set, label, ph) => `<label class="field"><span>${label}</span><input class="input" type="password" name="${name}" autocomplete="off" placeholder="${set ? '•••••• saglabāts — atstāj tukšu, lai nemainītu' : esc(ph)}"></label>`;
     const prevTexts = tplEl && box.contains(tplEl) ? tplEl : null; // nesaglabātie teksti paliek savā vietā
-    const act = document.activeElement, keepFocus = prevTexts && prevTexts.contains(act) ? [act, act.selectionStart, act.selectionEnd] : null, keepScroll = window.scrollY;
+    const act = document.activeElement, keepFocus = prevTexts && prevTexts.contains(act) ? [act, act.selectionStart, act.selectionEnd, act.scrollTop] : null, keepScroll = window.scrollY;
     if (prevTexts) prevTexts.remove();
     box.innerHTML = `
       <div class="card-head"><div><h3>SMS paziņojumi</h3><p class="muted small">Apstiprinājumi un atgādinājumi klientiem, paziņojumi tev par jauniem, pārceltiem un atceltiem pierakstiem.</p></div>
@@ -1043,12 +1050,12 @@
     // SMS tekstu redaktors: esošais elements tiek pārlikts jaunajā kartītē (ar fokusu un kursoru), nevis būvēts no jauna
     {
       $('#smsTextsSlot', box).replaceWith(prevTexts || buildSmsTexts());
-      if (keepFocus) { keepFocus[0].focus({ preventScroll: true }); if (keepFocus[1] != null) try { keepFocus[0].setSelectionRange(keepFocus[1], keepFocus[2]); } catch { /* */ } }
+      if (keepFocus) { keepFocus[0].focus({ preventScroll: true }); if (keepFocus[1] != null) try { keepFocus[0].setSelectionRange(keepFocus[1], keepFocus[2]); } catch { /* */ } keepFocus[0].scrollTop = keepFocus[3] || 0; }
       tplSync();
       if (keepFocus) window.scrollTo({ left: window.scrollX, top: keepScroll, behavior: 'instant' }); // lapa nelec, kamēr tiek rakstīts tekstā
       if (tplOpen && !tplPending) tplPreview();
     }
-    f.ascii.addEventListener('change', tplPreview);
+    f.ascii.addEventListener('change', () => { tplSync(); tplPreview(); });
     const syncProv = () => $$('.prov', box).forEach(el => el.classList.toggle('hidden', !el.classList.contains('prov-' + f.provider.value)));
     syncProv(); f.provider.addEventListener('change', syncProv);
     f.addEventListener('submit', async e => {
