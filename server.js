@@ -133,10 +133,10 @@ function smsVars(type, S, b, c, old, ascii) {
   const t = U.today(), d = U.parseDate(b.date), owner = SMS.isOwnerType(type);
   const day = smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
   return {
-    salons: cut(S.salonName, 200), pakalpojums: cut(b.serviceName, owner ? 35 : 40), laiks: smsWhen(b.date, b.start),
+    salons: cut(S.salonName, 200), pakalpojums: cut(b.serviceName, 80), laiks: smsWhen(b.date, b.start),
     kad: b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : day,
     datums: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`, plkst: b.start,
-    adrese: cut(S.address, 40), talrunis: cut(S.phone, 200), majaslapa: CANONICAL_HOST,
+    adrese: cut(S.address, 200), talrunis: cut(S.phone, 200), majaslapa: CANONICAL_HOST,
     // klientam — tikai vārds (burti); frizierei — pilns vārds, tālrunis un komentārs
     klients: owner ? cut(c.name, 30) : SMS.clientFirstName(c.name, ascii),
     ...(owner ? { klienta_talrunis: smsPhone(c.phone), piezime: cut(b.note, 60), bez_konta: b.createdBy === 'guest' ? '(bez konta)' : '' } : {}),
