@@ -802,12 +802,53 @@ body.lb-open .wa-fab { display: none; }
 .mrow .who b, .mrow .who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mrow .who small { color: var(--muted); font-size: 12px; }
 .mrow.completed { opacity: .7; }
-@media (max-width: 720px) {
+.week-toolbar #jump { width: 160px; height: 38px; margin-left: auto; }
+.month-day { scroll-margin: 16px 0 96px; }
+.mrow .who b { white-space: normal; overflow-wrap: anywhere; }
+/* vidēji plats ekrāns ar sānjoslu: laiks savā rindā, lai vārdam paliek viss šūnas platums */
+@media (min-width: 961px) and (max-width: 1320px) {
+  .mev .tm { display: block; margin: 0; font-size: 10.5px; }
+}
+/* vidējs platums: kompaktāka rīkjosla, lai virsraksts (piem., „Ceturtdiena, 24. septembris”) ietilptu vienā rindā */
+@media (min-width: 721px) and (max-width: 1320px) {
+  .week-toolbar .seg button { padding: 0 10px; }
+  .week-toolbar #jump { width: 144px; }
+}
+@media (min-width: 721px) and (max-width: 860px), (min-width: 961px) and (max-width: 1140px) {
+  .week-toolbar { gap: 7px; }
+  .week-toolbar .title { font-size: 15px; margin: 0 2px; letter-spacing: -.01em; }
+  .week-toolbar #jump { width: 128px; padding: 0 8px; font-size: 13.5px; }
+  .week-toolbar .seg button { padding: 0 8px; }
+  .week-toolbar .icon-btn { width: 36px; height: 36px; }
+  .week-toolbar .btn-sm { padding: 0 11px; }
+}
+/* šaurs ekrāns (bez sānjoslas): šūnās punkti, izvēlētās dienas pieraksti sarakstā zem kalendāra */
+@media (max-width: 960px) {
   .mcell { min-height: 58px; padding: 5px 2px 6px; align-items: center; gap: 3px; }
   .mhead { justify-content: center; }
   .mhead .msum, .mevs { display: none; }
   .mdots { display: flex; }
   .mcell.sel { background: rgba(107, 127, 91, .16); box-shadow: inset 0 0 0 2px var(--secondary); border-radius: 12px; }
   .month-day { display: block; }
-  .week-toolbar .title small { display: block; margin: 2px 0 0; }
+}
+/* platāks ekrāns: rīkjosla vienmēr vienā rindā — virsraksts saīsinās, nevis pārlec jaunā rindā */
+@media (min-width: 721px) {
+  .week-toolbar { flex-wrap: nowrap; }
+  /* ja virsraksts neietilpst vienā rindā, tas pāriet divās (rīkjoslas augstums nemainās) */
+  .week-toolbar .title { flex: 1 1 0; min-width: 0; line-height: 1.15; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .week-toolbar .title small { display: inline-block; white-space: normal; margin-left: 0; margin-right: 8px; } /* kopsumma pāriet nākamajā rindā kā viens gabals */
+  .week-toolbar #jump { margin-left: 0; flex: none; }
+  .week-toolbar .seg, .week-toolbar .icon-btn, .week-toolbar .btn { flex: none; }
+}
+/* telefons: 1. rinda — bultiņas, „Šodien”, datums; 2. — virsraksts; 3. — skata pārslēdzējs visā platumā */
+@media (max-width: 720px) {
+  .week-toolbar #jump { order: 1; flex: 1 1 110px; width: auto; min-width: 0; margin-left: 0; }
+  .week-toolbar .title { order: 2; flex: 1 1 100%; margin: 2px 2px 0; }
+  .week-toolbar .seg { order: 3; display: flex; flex: 1 1 100%; }
+  .week-toolbar .seg button { flex: 1; padding: 0 8px; }
+}
+@media (max-width: 420px) {
+  .mrow { flex-wrap: wrap; row-gap: 4px; }
+  .mrow .who { flex: 1 1 60%; }
+  .mrow .badge { margin-left: 19px; }
 }

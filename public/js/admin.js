@@ -189,7 +189,10 @@
     week: 'Noklikšķini uz brīva laika, lai izveidotu pierakstu. Svītrotie laukumi — ārpus darba laika.',
     month: 'Noklikšķini uz dienas, lai atvērtu tās pierakstus, vai uz pieraksta, lai to labotu. Svītrotās dienas — slēgts.'
   };
-  let calSeq = 0;
+  let calSeq = 0, calNavAt = 0;
+  // šaurā ekrānā mēneša šūnās ir tikai punkti, un izvēlētās dienas pieraksti ir sarakstā zem kalendāra
+  const calNarrow = () => matchMedia('(max-width: 960px)').matches;
+  const plPier = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'pieraksts' : 'pieraksti'}`;
 
   async function renderCalendar() {
     const seq = ++calSeq;
@@ -204,7 +207,7 @@
       view.innerHTML = pageHead('Kalendārs', 'Pieraksti', `<button class="btn btn-accent" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
         `<div class="week-toolbar"><button class="icon-btn" id="prev" aria-label="Iepriekš">${icon('chevL')}</button><button class="icon-btn" id="next" aria-label="Tālāk">${icon('chevR')}</button>
           <button class="btn btn-sm btn-ghost" id="todayBtn">Šodien</button><span class="title" id="calTitle"></span>
-          <input type="date" class="input" id="jump" style="width:160px;height:38px;margin-left:auto" aria-label="Pāriet uz datumu">
+          <input type="date" class="input" id="jump" aria-label="Pāriet uz datumu">
           <div class="seg"><button data-v="day">Diena</button><button data-v="week">Nedēļa</button><button data-v="month">Mēnesis</button></div></div>
         <div class="glass week" id="calWrap"><div class="week-scroll" id="calBody"><div class="skeleton" style="height:500px;margin:20px"></div></div></div>
         <p class="muted small" style="margin-top:10px" id="calHint"></p>`;
@@ -213,9 +216,10 @@
       $('#todayBtn').addEventListener('click', () => { cal.anchor = todayStr(); renderCalendar(); });
       $('#jump').addEventListener('change', e => { if (e.target.value) { cal.anchor = e.target.value; renderCalendar(); } });
       $$('.week-toolbar .seg button').forEach(b => b.addEventListener('click', () => { cal.view = b.dataset.v; renderCalendar(); }));
-      $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' ? cal.anchor : undefined }));
+      $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' || (cal.view === 'month' && calNarrow()) ? cal.anchor : undefined }));
     }
     $('#calTitle').textContent = title;
+    $('#calTitle').title = title;
     $('#calHint').textContent = CAL_HINT[cal.view];
     $('#calWrap').classList.toggle('is-month', cal.view === 'month');
     $('#jump').value = cal.anchor;
@@ -280,6 +284,7 @@
 
     $$('#calBody .ev').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); bookingEditModal(el.dataset.bk, bk.find(b => b.id === el.dataset.bk)); }));
     $$('#calBody .day-col').forEach(col => col.addEventListener('click', e => {
+      if (Date.now() - calNavAt < 500) return; // dubultklikšķa otrais klikšķis uz mēneša dienas — nav jauns pieraksts
       const y = e.clientY - col.getBoundingClientRect().top;
       const step = settings.slotStep || 15;
       const m = minS + Math.floor(y / PPM / step) * step;
@@ -297,7 +302,8 @@
     byDay.forEach(l => l.sort((a, b) => a.start.localeCompare(b.start)));
     const counted = l => l.filter(b => b.status !== 'noshow');
     const inMonth = counted(bk.filter(b => b.date.slice(0, 7) === mo));
-    if (inMonth.length) $('#calTitle').innerHTML = `${esc($('#calTitle').textContent)} <small>${inMonth.length} ${inMonth.length % 10 === 1 && inMonth.length % 100 !== 11 ? 'pieraksts' : 'pieraksti'} · ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}</small>`;
+    if (inMonth.length) $('#calTitle').title = `${$('#calTitle').textContent} — ${plPier(inMonth.length)}, ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}`;
+    if (inMonth.length) $('#calTitle').innerHTML = `${esc($('#calTitle').textContent)} <small>${plPier(inMonth.length)} · ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}</small>`;
     const evTitle = b => `${b.start}–${b.end} ${b.clientName} — ${b.serviceName}${b.status !== 'booked' ? ' (' + LV.status[b.status] + ')' : ''}`;
 
     let html = '<div class="month-grid">' + [1, 2, 3, 4, 5, 6, 0].map(w => `<div class="dow">${LV.daysShort[w]}</div>`).join('');
@@ -306,7 +312,7 @@
       const closed = !!cl || !h || !h.open;
       const show = list.length > 4 ? list.slice(0, 3) : list;
       html += `<div class="mcell${d.slice(0, 7) !== mo ? ' out' : ''}${closed ? ' closed' : ''}${d === t ? ' today' : ''}${d === cal.anchor ? ' sel' : ''}" data-date="${d}" role="button" tabindex="0"
-        aria-label="${esc(fmt.dateLong(d))}: ${cl ? esc(cl.reason || 'slēgts') + ', ' : ''}${list.length ? list.length + ' pieraksti' : 'nav pierakstu'}">
+        aria-label="${esc(fmt.dateLong(d))}: ${cl ? esc(cl.reason || 'slēgts') + ', ' : ''}${ok.length ? plPier(ok.length) : 'nav pierakstu'}${list.length > ok.length ? `, neieradās: ${list.length - ok.length}` : ''}">
         <div class="mhead"><b class="num">${p.getDate()}</b><span class="msum">${cl ? esc(cl.reason || 'Slēgts') : ok.length ? `${ok.length} · ${fmt.money(ok.reduce((a, b) => a + b.price, 0))}` : ''}</span></div>
         <div class="mevs">${show.map(b => `<div class="mev ${b.status}" data-bk="${b.id}" style="--c:${esc(b.color)}" title="${esc(evTitle(b))}"><span class="tm">${b.start}</span>${esc(b.clientName)}</div>`).join('')}${list.length > show.length ? `<div class="more">+${list.length - show.length} vēl</div>` : ''}</div>
         <div class="mdots" aria-hidden="true">${list.slice(0, 4).map(b => `<i style="background:${esc(b.color)}"></i>`).join('')}${list.length > 4 ? `<small>+${list.length - 4}</small>` : ''}</div>
@@ -326,16 +332,20 @@
     $('#calBody').scrollLeft = 0;
 
     $$('#calBody [data-bk]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); bookingEditModal(el.dataset.bk, bk.find(b => b.id === el.dataset.bk)); }));
-    const openDay = d => {
+    const toDay = () => { cal.view = 'day'; calNavAt = Date.now(); window.scrollTo({ top: 0, behavior: 'instant' }); return renderCalendar(); };
+    const openDay = async (d, byKey) => {
       cal.anchor = d;
-      if (!matchMedia('(max-width: 720px)').matches) cal.view = 'day'; // datorā — uzreiz dienas skats; telefonā — saraksts zem kalendāra
-      renderCalendar();
+      if (!calNarrow()) return toDay();      // platā ekrānā — uzreiz dienas skats
+      await renderCalendar();                 // šaurā — izvēlētās dienas saraksts zem kalendāra, ieritināts redzamajā daļā
+      const box = $('#calBody .month-day'); if (!box || cal.view !== 'month' || cal.anchor !== d) return;
+      box.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      if (byKey) $('#mOpenDay').focus({ preventScroll: true });
     };
     $$('#calBody .mcell').forEach(c => {
       c.addEventListener('click', () => openDay(c.dataset.date));
-      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDay(c.dataset.date); } });
+      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDay(c.dataset.date, true); } });
     });
-    $('#mOpenDay').addEventListener('click', () => { cal.view = 'day'; renderCalendar(); });
+    $('#mOpenDay').addEventListener('click', toDay);
     $('#mNew').addEventListener('click', () => bookingCreateModal({ date: sel }));
   }
 
