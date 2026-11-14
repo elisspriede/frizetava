@@ -763,3 +763,51 @@ body.lb-open .wa-fab { display: none; }
 }
 .tpl-prev .tpl-text, .tpl-prev .tpl-alt { white-space: pre-line; }
 .tpl-note { padding: 9px 12px; border-radius: 12px; background: rgba(201, 111, 79, .12); color: #8f3f25; font-weight: 500; }
+
+/* Kalendārs: mēneša skats */
+.week-toolbar .title small { font-weight: 500; font-size: 13px; color: var(--muted); margin-left: 8px; white-space: nowrap; }
+.month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.month-grid .dow { padding: 10px 6px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .55); }
+.mcell { min-height: 124px; padding: 6px 6px 8px; border-top: 1px solid var(--line); border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px;
+  cursor: pointer; min-width: 0; transition: background .15s; outline-offset: -2px; }
+.month-grid .dow + .mcell, .mcell:nth-child(7n + 1) { border-left: 0; }
+.month-grid .dow ~ .mcell:nth-child(-n + 14) { border-top: 0; }
+.mcell:hover { background: rgba(255, 255, 255, .5); }
+.mcell.closed { background: repeating-linear-gradient(135deg, rgba(46, 58, 47, .045) 0 8px, transparent 8px 16px); }
+.mcell.out > * { opacity: .45; }
+.mhead { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; }
+.mhead .num { font-size: 13.5px; color: var(--primary); min-width: 24px; height: 24px; display: inline-grid; place-items: center; border-radius: 9px; padding: 0 5px; }
+.mcell.today .num { background: var(--accent); color: #fff; }
+.mhead .msum { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.mevs { display: grid; gap: 3px; min-width: 0; }
+.mev { font-size: 11.5px; line-height: 1.25; padding: 3px 6px; border-radius: 7px; border-left: 3px solid var(--c, var(--secondary)); background: rgba(255, 255, 255, .78);
+  color: var(--primary); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-sm); }
+.mev:hover { background: #fff; }
+.mev .tm { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 5px; }
+.mev.completed { opacity: .65; }
+.mev.noshow { text-decoration: line-through; opacity: .6; }
+.mcell .more { font-size: 11px; font-weight: 600; color: var(--ink-2); padding-left: 6px; }
+.mdots { display: none; align-items: center; justify-content: center; gap: 3px; flex-wrap: wrap; }
+.mdots i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+.mdots small { font-size: 9.5px; color: var(--muted); font-weight: 700; }
+.month-day { display: none; padding: 16px 14px 14px; border-top: 1px solid var(--line); }
+.month-day .card-head { margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
+.month-day h3 { font-size: 15px; }
+.mrow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; margin-top: 6px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, .9);
+  background: rgba(255, 255, 255, .6); font: inherit; color: inherit; cursor: pointer; }
+.mrow .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.mrow .tm { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.mrow .who { display: grid; min-width: 0; flex: 1; }
+.mrow .who b, .mrow .who small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mrow .who small { color: var(--muted); font-size: 12px; }
+.mrow.completed { opacity: .7; }
+@media (max-width: 720px) {
+  .mcell { min-height: 58px; padding: 5px 2px 6px; align-items: center; gap: 3px; }
+  .mhead { justify-content: center; }
+  .mhead .msum, .mevs { display: none; }
+  .mdots { display: flex; }
+  .mcell.sel { background: rgba(107, 127, 91, .16); box-shadow: inset 0 0 0 2px var(--secondary); border-radius: 12px; }
+  .month-day { display: block; }
+  .week-toolbar .title small { display: block; margin: 2px 0 0; }
+}

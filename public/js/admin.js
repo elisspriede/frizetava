@@ -52,6 +52,8 @@
   async function ensureClients(force) { if (!clients || force) clients = (await API.get('/api/admin/clients')).clients; return clients; }
   async function ensureSchedule(force) { if (!schedule || force) schedule = await API.get('/api/admin/schedule'); return schedule; }
 
+  // vai joprojām atvērta šī sadaļa (lēni ielādējies saturs nedrīkst pārrakstīt pa to laiku atvērtu citu sadaļu)
+  const onSec = sec => { const h = (location.hash.slice(1) || 'parskats').split('?')[0]; return (SECTIONS.find(x => x[0] === h) ? h : 'parskats') === sec; };
   function route() {
     const sec = (location.hash.slice(1) || 'parskats').split('?')[0];
     const found = SECTIONS.find(s => s[0] === sec) ? sec : 'parskats';
@@ -71,6 +73,7 @@
     loading();
     let s;
     try { s = await API.get('/api/admin/stats?range=' + dashRange); } catch (e) { return toast(e.message, 'error'); }
+    if (!onSec('parskats')) return;
     const k = s.kpi;
     const h = new Date().getHours();
     const greet = h < 12 ? 'Labrīt' : h < 18 ? 'Labdien' : 'Labvakar';
@@ -166,10 +169,35 @@
   /* ----------------------------------------------------------- KALENDĀRS */
   function weekStart(d) { const w = (parseD(d).getDay() + 6) % 7; return addDays(d, -w); }
 
+  // tas pats datums citā mēnesī (31. → mēneša pēdējā diena, ja tādas nav)
+  function shiftMonth(d, n) {
+    const p = parseD(d), t = new Date(p.getFullYear(), p.getMonth() + n, 1);
+    t.setDate(Math.min(p.getDate(), new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()));
+    return dateStr(t);
+  }
+  // mēneša režģis: pilnas nedēļas no pirmdienas, kas nosedz visu mēnesi
+  function monthDays(d) {
+    const p = parseD(d), first = weekStart(dateStr(new Date(p.getFullYear(), p.getMonth(), 1)));
+    const last = dateStr(new Date(p.getFullYear(), p.getMonth() + 1, 0));
+    const out = [];
+    for (let x = first; x <= last || out.length % 7; x = addDays(x, 1)) out.push(x);
+    return out;
+  }
+  const calStep = dir => { cal.anchor = cal.view === 'month' ? shiftMonth(cal.anchor, dir) : addDays(cal.anchor, dir * (cal.view === 'week' ? 7 : 1)); renderCalendar(); };
+  const CAL_HINT = {
+    day: 'Noklikšķini uz brīva laika, lai izveidotu pierakstu. Svītrotie laukumi — ārpus darba laika.',
+    week: 'Noklikšķini uz brīva laika, lai izveidotu pierakstu. Svītrotie laukumi — ārpus darba laika.',
+    month: 'Noklikšķini uz dienas, lai atvērtu tās pierakstus, vai uz pieraksta, lai to labotu. Svītrotās dienas — slēgts.'
+  };
+  let calSeq = 0;
+
   async function renderCalendar() {
-    const days = cal.view === 'week' ? [...Array(7)].map((_, i) => addDays(weekStart(cal.anchor), i)) : [cal.anchor];
+    const seq = ++calSeq;
+    const days = cal.view === 'month' ? monthDays(cal.anchor) : cal.view === 'week' ? [...Array(7)].map((_, i) => addDays(weekStart(cal.anchor), i)) : [cal.anchor];
     const from = days[0], to = days[days.length - 1];
-    const title = cal.view === 'week'
+    const title = cal.view === 'month'
+      ? `${cap(LV.months[parseD(cal.anchor).getMonth()])} ${parseD(cal.anchor).getFullYear()}`
+      : cal.view === 'week'
       ? `${parseD(from).getDate()}. ${from.slice(5, 7) !== to.slice(5, 7) ? LV.monthsShort[parseD(from).getMonth()] + ' ' : ''}– ${parseD(to).getDate()}. ${LV.months[parseD(to).getMonth()]}`
       : fmt.dateLong(from);
     if (!$('#calWrap')) {
@@ -177,17 +205,19 @@
         `<div class="week-toolbar"><button class="icon-btn" id="prev" aria-label="Iepriekš">${icon('chevL')}</button><button class="icon-btn" id="next" aria-label="Tālāk">${icon('chevR')}</button>
           <button class="btn btn-sm btn-ghost" id="todayBtn">Šodien</button><span class="title" id="calTitle"></span>
           <input type="date" class="input" id="jump" style="width:160px;height:38px;margin-left:auto" aria-label="Pāriet uz datumu">
-          <div class="seg"><button data-v="day">Diena</button><button data-v="week">Nedēļa</button></div></div>
+          <div class="seg"><button data-v="day">Diena</button><button data-v="week">Nedēļa</button><button data-v="month">Mēnesis</button></div></div>
         <div class="glass week" id="calWrap"><div class="week-scroll" id="calBody"><div class="skeleton" style="height:500px;margin:20px"></div></div></div>
-        <p class="muted small" style="margin-top:10px">Noklikšķini uz brīva laika, lai izveidotu pierakstu. Svītrotie laukumi — ārpus darba laika.</p>`;
-      $('#prev').addEventListener('click', () => { cal.anchor = addDays(cal.anchor, cal.view === 'week' ? -7 : -1); renderCalendar(); });
-      $('#next').addEventListener('click', () => { cal.anchor = addDays(cal.anchor, cal.view === 'week' ? 7 : 1); renderCalendar(); });
+        <p class="muted small" style="margin-top:10px" id="calHint"></p>`;
+      $('#prev').addEventListener('click', () => calStep(-1));
+      $('#next').addEventListener('click', () => calStep(1));
       $('#todayBtn').addEventListener('click', () => { cal.anchor = todayStr(); renderCalendar(); });
       $('#jump').addEventListener('change', e => { if (e.target.value) { cal.anchor = e.target.value; renderCalendar(); } });
       $$('.week-toolbar .seg button').forEach(b => b.addEventListener('click', () => { cal.view = b.dataset.v; renderCalendar(); }));
       $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' ? cal.anchor : undefined }));
     }
     $('#calTitle').textContent = title;
+    $('#calHint').textContent = CAL_HINT[cal.view];
+    $('#calWrap').classList.toggle('is-month', cal.view === 'month');
     $('#jump').value = cal.anchor;
     $$('.week-toolbar .seg button').forEach(b => b.classList.toggle('on', b.dataset.v === cal.view));
 
@@ -196,7 +226,9 @@
       await ensureSchedule();
       bk = (await API.get(`/api/admin/bookings?from=${from}&to=${to}`)).bookings.filter(b => b.status !== 'cancelled');
     } catch (e) { return toast(e.message, 'error'); }
+    if (seq !== calSeq || !$('#calBody') || !onSec('kalendars')) return; // pa to laiku izvēlēts cits datums/skats vai atvērta cita sadaļa
     const hours = schedule.hours, closures = new Map(schedule.closures.map(c => [c.date, c]));
+    if (cal.view === 'month') return renderMonth(days, bk, hours, closures);
     let minS = 24 * 60, maxE = 0;
     Object.values(hours).forEach(h => { if (h.open) { minS = Math.min(minS, toMin(h.start)); maxE = Math.max(maxE, toMin(h.end)); } });
     bk.forEach(b => { minS = Math.min(minS, toMin(b.start)); maxE = Math.max(maxE, toMin(b.end)); });
@@ -257,6 +289,56 @@
     if (cal.view === 'day' || innerWidth < 720) $('#calBody').scrollLeft = 0;
   }
 
+  // Mēneša skats: katrā dienā pieraksti (laiks + klients); telefonā — punkti un izvēlētās dienas saraksts zem kalendāra
+  function renderMonth(days, bk, hours, closures) {
+    const mo = cal.anchor.slice(0, 7), t = todayStr();
+    const byDay = new Map(days.map(d => [d, []]));
+    bk.forEach(b => { if (byDay.has(b.date)) byDay.get(b.date).push(b); });
+    byDay.forEach(l => l.sort((a, b) => a.start.localeCompare(b.start)));
+    const counted = l => l.filter(b => b.status !== 'noshow');
+    const inMonth = counted(bk.filter(b => b.date.slice(0, 7) === mo));
+    if (inMonth.length) $('#calTitle').innerHTML = `${esc($('#calTitle').textContent)} <small>${inMonth.length} ${inMonth.length % 10 === 1 && inMonth.length % 100 !== 11 ? 'pieraksts' : 'pieraksti'} · ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}</small>`;
+    const evTitle = b => `${b.start}–${b.end} ${b.clientName} — ${b.serviceName}${b.status !== 'booked' ? ' (' + LV.status[b.status] + ')' : ''}`;
+
+    let html = '<div class="month-grid">' + [1, 2, 3, 4, 5, 6, 0].map(w => `<div class="dow">${LV.daysShort[w]}</div>`).join('');
+    days.forEach(d => {
+      const p = parseD(d), h = hours[p.getDay()], cl = closures.get(d), list = byDay.get(d), ok = counted(list);
+      const closed = !!cl || !h || !h.open;
+      const show = list.length > 4 ? list.slice(0, 3) : list;
+      html += `<div class="mcell${d.slice(0, 7) !== mo ? ' out' : ''}${closed ? ' closed' : ''}${d === t ? ' today' : ''}${d === cal.anchor ? ' sel' : ''}" data-date="${d}" role="button" tabindex="0"
+        aria-label="${esc(fmt.dateLong(d))}: ${cl ? esc(cl.reason || 'slēgts') + ', ' : ''}${list.length ? list.length + ' pieraksti' : 'nav pierakstu'}">
+        <div class="mhead"><b class="num">${p.getDate()}</b><span class="msum">${cl ? esc(cl.reason || 'Slēgts') : ok.length ? `${ok.length} · ${fmt.money(ok.reduce((a, b) => a + b.price, 0))}` : ''}</span></div>
+        <div class="mevs">${show.map(b => `<div class="mev ${b.status}" data-bk="${b.id}" style="--c:${esc(b.color)}" title="${esc(evTitle(b))}"><span class="tm">${b.start}</span>${esc(b.clientName)}</div>`).join('')}${list.length > show.length ? `<div class="more">+${list.length - show.length} vēl</div>` : ''}</div>
+        <div class="mdots" aria-hidden="true">${list.slice(0, 4).map(b => `<i style="background:${esc(b.color)}"></i>`).join('')}${list.length > 4 ? `<small>+${list.length - 4}</small>` : ''}</div>
+      </div>`;
+    });
+    html += '</div>';
+    // izvēlētās dienas pieraksti (redzami šaurā ekrānā, kur šūnās ietilpst tikai punkti)
+    const sel = cal.anchor, selList = byDay.get(sel) || [];
+    html += `<div class="month-day"><div class="card-head"><h3>${esc(cap(fmt.dateLong(sel)))}</h3>
+        <div style="display:flex;gap:8px"><button class="btn btn-sm btn-ghost" id="mOpenDay">Dienas skats</button><button class="btn btn-sm btn-accent" id="mNew">${icon('plus')}Pieraksts</button></div></div>
+      ${closures.has(sel) ? `<p class="muted small">${esc(closures.get(sel).reason || 'Slēgts')}</p>` : ''}
+      ${selList.length ? selList.map(b => `<button type="button" class="mrow ${b.status}" data-bk="${b.id}"><i class="dot" style="background:${esc(b.color)}"></i>
+          <span class="tm">${b.start}–${b.end}</span><span class="who"><b>${esc(b.clientName)}</b><small>${esc(b.serviceName)}</small></span>
+          ${b.status !== 'booked' ? `<span class="badge ${b.status}">${LV.status[b.status]}</span>` : ''}</button>`).join('')
+        : '<p class="muted small">Šajā dienā pierakstu nav.</p>'}</div>`;
+    $('#calBody').innerHTML = html;
+    $('#calBody').scrollLeft = 0;
+
+    $$('#calBody [data-bk]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); bookingEditModal(el.dataset.bk, bk.find(b => b.id === el.dataset.bk)); }));
+    const openDay = d => {
+      cal.anchor = d;
+      if (!matchMedia('(max-width: 720px)').matches) cal.view = 'day'; // datorā — uzreiz dienas skats; telefonā — saraksts zem kalendāra
+      renderCalendar();
+    };
+    $$('#calBody .mcell').forEach(c => {
+      c.addEventListener('click', () => openDay(c.dataset.date));
+      c.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDay(c.dataset.date); } });
+    });
+    $('#mOpenDay').addEventListener('click', () => { cal.view = 'day'; renderCalendar(); });
+    $('#mNew').addEventListener('click', () => bookingCreateModal({ date: sel }));
+  }
+
   /* ----------------------------------------------------------- PIERAKSTU SARAKSTS */
   async function renderList() {
     view.innerHTML = pageHead('Pārvaldība', 'Visi pieraksti', `<a class="btn btn-line" href="/api/admin/export/bookings.csv">${icon('download')}Eksportēt CSV</a>
@@ -283,6 +365,7 @@
     const q = new URLSearchParams({ from: list.from, to: list.to, status: list.status, q: list.q });
     let rows;
     try { rows = (await API.get('/api/admin/bookings?' + q)).bookings; } catch (e) { return toast(e.message, 'error'); }
+    if (!$('#listTable')) return;
     const valid = rows.filter(b => b.status === 'booked' || b.status === 'completed');
     $('#listSummary').textContent = `${rows.length} ieraksti · ${fmt.money(valid.reduce((a, b) => a + b.price, 0))}`;
     $('#listTable').innerHTML = rows.length ? `<table class="table"><thead><tr><th>Datums</th><th>Laiks</th><th>Klients</th><th class="hide-sm">Pakalpojums</th><th class="num">Cena</th><th>Statuss</th></tr></thead><tbody>
@@ -432,6 +515,7 @@
     $('#newCl').addEventListener('click', () => clientModal(null));
     $('#clQ').addEventListener('input', e => { clientQ = e.target.value; drawClients(); });
     try { await ensureClients(true); } catch (e) { return toast(e.message, 'error'); }
+    if (!onSec('klienti')) return;
     drawClients();
   }
   function drawClients() {
@@ -516,6 +600,7 @@
   /* ----------------------------------------------------------- PAKALPOJUMI */
   async function renderServices() {
     try { services = (await API.get('/api/admin/services')).services; } catch (e) { return toast(e.message, 'error'); }
+    if (!onSec('pakalpojumi')) return;
     view.innerHTML = pageHead('Cenrādis', 'Pakalpojumi', `<button class="btn btn-accent" id="newSvc">${icon('plus')}Jauns pakalpojums</button>`) +
       `<div class="svc-admin">${services.map(s => `
         <article class="glass service ${s.active ? '' : 'inactive'}" data-svc="${s.id}" tabindex="0">
@@ -564,6 +649,7 @@
   /* ----------------------------------------------------------- DARBA LAIKS */
   async function renderHours() {
     try { await ensureSchedule(true); } catch (e) { return toast(e.message, 'error'); }
+    if (!onSec('darba-laiks')) return;
     const order = [1, 2, 3, 4, 5, 6, 0];
     const h = schedule.hours;
     view.innerHTML = pageHead('Grafiks', 'Darba laiks', '') + `<div class="dash-grid">
@@ -619,6 +705,7 @@
   /* ----------------------------------------------------------- IESTATĪJUMI */
   async function renderSettings() {
     try { settings = (await API.get('/api/admin/settings')).settings; } catch (e) { return toast(e.message, 'error'); }
+    if (!onSec('iestatijumi')) return;
     const s = settings;
     view.innerHTML = pageHead('Konfigurācija', 'Iestatījumi', '') + `<div class="dash-grid">
       <section class="glass card span-7"><div class="card-head"><h3>Salona informācija</h3></div>
