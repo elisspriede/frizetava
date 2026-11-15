@@ -32,13 +32,17 @@ const money2 = n => Math.round(Number(n) * 100) / 100;
 /* Pakalpojuma varianti (klients izvēlas vienu) un ekstras (var izvēlēties vairākas): katram savs papildu laiks un cena.
    Atgriež izvēli un kopējo ilgumu/cenu. strict — klienta pieteikumiem (variants obligāts, nezināma ekstra ir kļūda);
    citādi (admins, brīvo laiku meklēšana) nezināmais tiek ignorēts. */
-function pickAddons(svc, optionId, extraIds, strict) {
+function pickAddons(svc, optionId, extraIds, strict, legacy) {
+  // legacy — pieraksta paša saglabātais variants/ekstras: admins tos var paturēt arī tad, ja cenrādī to vairs nav
+  const lo = legacy && legacy.option ? [legacy.option] : [], le = legacy && Array.isArray(legacy.extras) ? legacy.extras : [];
   const opts = Array.isArray(svc.options) ? svc.options : [], exs = Array.isArray(svc.extras) ? svc.extras : [];
-  let option = opts.length && typeof optionId === 'string' ? opts.find(o => o.id === optionId) || null : null;
-  if (opts.length && !option && strict) fail(400, `Lūdzu izvēlies: ${svc.optionsLabel || 'variantu'}.`);
+  const wanted = typeof optionId === 'string' && optionId ? optionId : null;
+  const option = wanted ? opts.find(o => o.id === wanted) || lo.find(o => o.id === wanted) || null : null;
+  if (strict && wanted && !option) fail(400, 'Izvēlētais variants vairs nav pieejams. Lūdzu izvēlies vēlreiz.');
+  if (strict && opts.length && !option) fail(400, `Lūdzu izvēlies: ${svc.optionsLabel || 'variantu'}.`);
   let ids = typeof extraIds === 'string' ? extraIds.split(',') : Array.isArray(extraIds) ? extraIds : [];
   ids = [...new Set(ids.filter(x => typeof x === 'string' && x))].slice(0, 30);
-  const extras = ids.map(id => exs.find(e => e.id === id));
+  const extras = ids.map(id => exs.find(e => e.id === id) || le.find(e => e.id === id));
   if (extras.some(e => !e) && strict) fail(400, 'Izvēlētais papildinājums vairs nav pieejams. Lūdzu izvēlies vēlreiz.');
   const add = [option, ...extras].filter(Boolean);
   const dp = add.reduce((a, x) => a + (Number(x.price) || 0), 0), dd = add.reduce((a, x) => a + (Number(x.duration) || 0), 0);
@@ -47,8 +51,15 @@ function pickAddons(svc, optionId, extraIds, strict) {
     priceMax: svc.priceMax != null && svc.priceMax > svc.price ? money2(svc.priceMax + dp) : null
   };
 }
+// Klients nosūta arī to, ko redzēja ekrānā (cena, ilgums). Ja cenrādis pa to laiku mainīts — pieraksts netiek izveidots ar citu cenu.
+function assertExpected(sel, body) {
+  const p = Number(body.expectPrice), d = Number(body.expectDuration);
+  if ((body.expectPrice != null && Number.isFinite(p) && Math.abs(p - sel.price) > 0.004) || (body.expectDuration != null && Number.isFinite(d) && d !== sel.duration))
+    fail(409, 'Cenrādis ir mainīts — lūdzu pārskati pakalpojumu un cenu.');
+}
 const addonSnapshot = sel => ({
   optionId: sel.option ? sel.option.id : null, optionName: sel.option ? sel.option.name : '',
+  optionDuration: sel.option ? sel.option.duration : 0, optionPrice: sel.option ? sel.option.price : 0,
   extras: sel.extras.map(e => ({ id: e.id, name: e.name, duration: e.duration, price: e.price }))
 });
 // „Gari mati + Maska, Fēnošana”
@@ -102,7 +113,8 @@ function bookingView(b, forAdmin = false) {
   const svc = getService(b.serviceId);
   const v = {
     id: b.id, serviceId: b.serviceId, serviceName: b.serviceName, color: svc ? svc.color : '#6B7F5B',
-    date: b.date, start: b.start, end: b.end, price: b.price, priceMax: b.priceMax != null && b.priceMax > b.price ? b.priceMax : null,
+    date: b.date, start: b.start, end: b.end, price: b.price,
+    priceMax: b.status === 'booked' && b.priceMax != null && b.priceMax > b.price ? b.priceMax : null, // pēc vizītes cena ir viena
     optionName: b.optionName || '', extras: (b.extras || []).map(e => e.name), detail: bookingDetail(b),
     status: b.status, note: b.note || '', createdAt: b.createdAt
   };
@@ -114,7 +126,12 @@ function bookingView(b, forAdmin = false) {
       clientName: u ? u.name : (b.guestName || 'Klients bez konta'),
       clientPhone: u ? u.phone : (b.guestPhone || ''),
       adminNote: b.adminNote || '', cancelledBy: b.cancelledBy || null, createdBy: b.createdBy || null,
-      optionId: b.optionId || null, extraIds: (b.extras || []).map(e => e.id)
+      optionId: b.optionId || null, extraIds: (b.extras || []).map(e => e.id),
+      // saglabātā izvēle (nosaukums, laiks, cena) — lai to var paturēt arī pēc cenrāža maiņas
+      addons: {
+        option: b.optionId ? { id: b.optionId, name: b.optionName || '', duration: b.optionDuration || 0, price: b.optionPrice || 0 } : null,
+        extras: (b.extras || []).map(e => ({ id: e.id, name: e.name, duration: e.duration || 0, price: e.price || 0 }))
+      }
     });
   }
   return v;
@@ -544,6 +561,7 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   if (!U.isDate(body.date) || !U.isTime(body.start)) fail(400, 'Lūdzu izvēlies datumu un laiku.');
 
   const sel = pickAddons(svc, body.optionId, body.extraIds, true);
+  assertExpected(sel, body);
   if (!computeSlots(body.date, sel.duration).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
 
   // ierobežojumi pret surogātpieteikumiem
@@ -615,7 +633,9 @@ route('GET', '/api/my/bookings', 'client', ({ user }) => ({
 route('POST', '/api/my/bookings', 'client', ({ user, body }) => {
   const svc = getService(body.serviceId);
   if (!svc || !svc.active) fail(404, 'Pakalpojums nav pieejams.');
-  const b = createBooking({ user, service: svc, sel: pickAddons(svc, body.optionId, body.extraIds, true), date: body.date, start: body.start, note: body.note, by: 'client' });
+  const sel = pickAddons(svc, body.optionId, body.extraIds, true);
+  assertExpected(sel, body);
+  const b = createBooking({ user, service: svc, sel, date: body.date, start: body.start, note: body.note, by: 'client' });
   notifyBooking('new', b, 'client');
   return { booking: bookingView(b) };
 });
@@ -713,8 +733,12 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
     const svc = getService(svcChanged ? body.serviceId : b.serviceId);
     if (svcChanged && !svc) fail(404, 'Pakalpojums nav atrasts.');
     if (svc) {
+      const legacy = svcChanged ? null : { // tas pats pakalpojums → saglabāto variantu/ekstras var paturēt, pat ja cenrādī to vairs nav
+        option: b.optionId ? { id: b.optionId, name: b.optionName || '', duration: b.optionDuration || 0, price: b.optionPrice || 0 } : null,
+        extras: b.extras || []
+      };
       sel = pickAddons(svc, body.optionId !== undefined ? body.optionId : (svcChanged ? null : b.optionId),
-        body.extraIds !== undefined ? body.extraIds : (svcChanged ? [] : (b.extras || []).map(e => e.id)), false);
+        body.extraIds !== undefined ? body.extraIds : (svcChanged ? [] : (b.extras || []).map(e => e.id)), false, legacy);
       Object.assign(next, { serviceId: svc.id, serviceName: svcChanged ? svc.name : b.serviceName }, addonSnapshot(sel));
       if (body.price === undefined || body.price === '') next.price = sel.price;
       if (!body.duration) body.duration = sel.duration;
@@ -730,6 +754,7 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
   // cena „no–līdz” paliek tikai tad, ja cena joprojām ir cenrāža „no”; admina ielikta cita cena ir precīza
   if (sel) next.priceMax = next.price === sel.price ? sel.priceMax : null;
   else if (next.price !== b.price) next.priceMax = null;
+  if (next.status !== 'booked') next.priceMax = null; // pēc vizītes (vai atcelšanas) cena ir tā, kas ierakstīta
   if (body.note !== undefined) next.note = clean(body.note);
   if (body.adminNote !== undefined) next.adminNote = clean(body.adminNote);
   if (body.userId !== undefined) {
@@ -764,7 +789,7 @@ route('DELETE', '/api/admin/bookings/:id', 'admin', ({ params }) => {
 
 route('POST', '/api/admin/bookings/mark-past', 'admin', () => {
   let n = 0;
-  for (const b of db.bookings) if (b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) < Date.now()) { b.status = 'completed'; n++; }
+  for (const b of db.bookings) if (b.status === 'booked' && U.ts(b.date, U.toMin(b.end)) < Date.now()) { b.status = 'completed'; b.priceMax = null; n++; }
   save();
   return { updated: n };
 });

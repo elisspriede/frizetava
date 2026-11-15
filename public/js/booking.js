@@ -32,7 +32,7 @@
 
   // pakalpojuma priekšizvēle no saites (?pakalpojums=…)
   const pre = new URLSearchParams(location.search).get('pakalpojums');
-  if (pre && svcById(pre) && !W.done) { W.serviceId = pre; W.step = svcHasAddons(svcById(pre)) ? 1 : 2; } // ar variantiem/ekstrām — vispirms izvēle
+  if (pre && svcById(pre) && !W.done) { W.serviceId = pre; W.step = svcHasAddons(svcById(pre)) ? 1 : 2; W.showAddons = true; } // ar variantiem/ekstrām — vispirms izvēle
 
   /* ------------------------------------------------ sānu kartītes */
   function renderInfo() {
@@ -54,7 +54,7 @@
 
   function renderSummary() {
     const svc = svcById(W.serviceId), c = calc();
-    const row = (k, v, on) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,.16)"><span style="opacity:.65">${k}</span><b style="text-align:right;${on ? '' : 'opacity:.45;font-weight:500'}">${v}</b></div>`;
+    const row = (k, v, on) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,.16)"><span style="opacity:.65;min-width:0;overflow-wrap:anywhere">${k}</span><b style="text-align:right;min-width:0;overflow-wrap:anywhere;${on ? '' : 'opacity:.45;font-weight:500'}">${v}</b></div>`;
     $('#summary').innerHTML = `<span class="eyebrow" style="color:var(--tertiary)">Tavs pieraksts</span>
       <div style="margin-top:12px;position:relative;z-index:1">
         ${row('Pakalpojums', svc ? esc(svc.name) : 'nav izvēlēts', !!svc)}
@@ -129,7 +129,10 @@
       render(true);
       $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    // atverot ar jau izvēlētu pakalpojumu (saite no sākumlapas, cenrādis mainījies) — izvēlne uzreiz redzama
+    const jump = !!W.showAddons; W.showAddons = false;
     showAddons(false);
+    if (jump && $('#addonChooser')) setTimeout(() => { const box = $('#addonBox'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   }
 
   function renderDateTime() {
@@ -174,7 +177,8 @@
       if (!W.date || !W.start) { toast('Lūdzu izvēlies laiku.', 'error'); W.step = 2; render(true); return; }
       await withBusy(e.submitter, async () => {
         try {
-          const r = await API.post('/api/guest/bookings', { serviceId: W.serviceId, optionId: W.optionId, extraIds: W.extraIds, date: W.date, start: W.start, name: d.name, phone: d.phone, note: d.note, website: d.website });
+          const c = calc();
+          const r = await API.post('/api/guest/bookings', { serviceId: W.serviceId, optionId: W.optionId, extraIds: W.extraIds, expectPrice: c.price, expectDuration: c.duration, date: W.date, start: W.start, name: d.name, phone: d.phone, note: d.note, website: d.website });
           if (r.claimToken) { tokens.push({ t: r.claimToken, exp: Date.now() + 2 * 3600e3 - 60e3 }); tokens = tokens.slice(-10); store.set('guestTokens', tokens); }
           W.done = { booking: r.booking, name: r.name, phone: r.phone, hasToken: !!r.claimToken };
           store.set('guestDone', W.done);
@@ -183,10 +187,10 @@
         } catch (x) {
           if (x.status === 409 && /laiks/.test(x.message)) { toast(x.message, 'error'); W.start = null; W.step = 2; render(true); return; }
           // cenrādis pa to laiku mainīts (variants vai ekstra vairs nav pieejama) — jāizvēlas no jauna
-          if (x.status === 400 && /izvēlies/i.test(x.message)) {
+          if ((x.status === 400 && /izvēlies/i.test(x.message)) || (x.status === 409 && /Cenrādis/.test(x.message))) {
             toast(x.message, 'error');
             try { info = await API.get('/api/public'); } catch { /* */ }
-            Object.assign(W, { optionId: null, extraIds: [], date: null, start: null, step: 1 }); if (!svcById(W.serviceId)) W.serviceId = null;
+            Object.assign(W, { optionId: null, extraIds: [], date: null, start: null, step: 1, showAddons: true }); if (!svcById(W.serviceId)) W.serviceId = null;
             render(true); return;
           }
           err.textContent = x.message; err.classList.remove('hidden');

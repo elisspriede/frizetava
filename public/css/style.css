@@ -900,3 +900,14 @@ body.lb-open .wa-fab { display: none; }
   .addon-row label { grid-column: 1 / -1; }
   .addon-row label .input { max-width: 120px; }
 }
+/* pārbaudes labojumi: varianti un ekstras */
+#addonBox { scroll-margin: 96px 0 100px; }
+.service .price, .service .dur { white-space: nowrap; }
+.service .meta { flex-wrap: wrap; gap: 6px 12px; }
+.addons-total b, .addon-group legend { overflow-wrap: anywhere; min-width: 0; }
+.addons-total span { flex: none; }
+.summary div b { min-width: 0; overflow-wrap: anywhere; }
+.bk-addons > * { min-width: 0; }
+.bk-extra { max-width: 100%; min-width: 0; }
+.bk-extra span { min-width: 0; overflow-wrap: anywhere; }
+.bk-addons select.input { max-width: 100%; }

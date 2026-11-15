@@ -150,7 +150,7 @@
       // mainoties variantam vai ekstrām, mainās ilgums — iepriekš izvēlētais laiks vairs neder
       renderAddonChooser($('#addonChooser'), svc, W, () => { W.date = null; W.start = null; W.slots = null; sync(); });
       sync();
-      $('#addonNext').addEventListener('click', () => { if (!calc().needsOption) { W.step = 2; W.month = W.month || todayStr().slice(0, 7); renderWizard(); } });
+      $('#addonNext').addEventListener('click', () => { if (!calc().needsOption) { W.step = 2; W.month = W.month || todayStr().slice(0, 7); renderWizard(); $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
       if (scroll) { box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); const first = $('#addonChooser input', box); if (first) first.focus({ preventScroll: true }); }
     };
     $$('[data-svc]').forEach(b => b.addEventListener('click', () => {
@@ -164,8 +164,11 @@
       W.step = 2;
       W.month = W.month || todayStr().slice(0, 7);
       renderWizard();
+      $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    const jump = !!W.showAddons; W.showAddons = false;
     showAddons(false);
+    if (jump && $('#addonChooser')) setTimeout(() => { const box = $('#addonBox'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   }
 
   function renderDateTime() {
@@ -215,7 +218,7 @@
       try {
         let r;
         if (W.reschedule) r = await API.put(`/api/my/bookings/${W.reschedule.id}`, { date: W.date, start: W.start });
-        else r = await API.post('/api/my/bookings', { serviceId: W.serviceId, optionId: W.optionId, extraIds: W.extraIds, date: W.date, start: W.start, note: W.note });
+        else { const c = calc(); r = await API.post('/api/my/bookings', { serviceId: W.serviceId, optionId: W.optionId, extraIds: W.extraIds, expectPrice: c.price, expectDuration: c.duration, date: W.date, start: W.start, note: W.note }); }
         W.doneType = W.reschedule ? 'move' : 'new';
         W.done = r.booking;
         renderWizard();
@@ -224,9 +227,9 @@
         toast(x.message, 'error');
         if (x.status === 409 && /laiks/.test(x.message)) { W.step = 2; W.start = null; renderWizard(); }
         // cenrādis pa to laiku mainīts (variants vai ekstra vairs nav pieejama) — jāizvēlas no jauna
-        if (x.status === 400 && /izvēlies/i.test(x.message) && !W.reschedule) {
+        if (((x.status === 400 && /izvēlies/i.test(x.message)) || (x.status === 409 && /Cenrādis/.test(x.message))) && !W.reschedule) {
           try { info = await API.get('/api/public'); } catch { /* */ }
-          Object.assign(W, { optionId: null, extraIds: [], date: null, start: null, step: 1 }); if (!svcById(W.serviceId)) W.serviceId = null;
+          Object.assign(W, { optionId: null, extraIds: [], date: null, start: null, step: 1, showAddons: true }); if (!svcById(W.serviceId)) W.serviceId = null;
           renderWizard();
         }
       }

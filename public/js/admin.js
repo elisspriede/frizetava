@@ -400,21 +400,29 @@
   // „Pakalpojums · Variants + Ekstras” (droši ievietojams HTML)
   const svcLine = b => esc(b.serviceName) + (b.detail ? ` · ${esc(b.detail)}` : '');
   const svcOptText = s => `${esc(s.name)} — ${svcRange(s).duration}, ${svcRange(s).price}`;
-  function serviceOptions(sel) {
-    return services.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${svcOptText(s)}${s.active ? '' : ' (neaktīvs)'}</option>`).join('');
+  function serviceOptions(sel, name) {
+    // pieraksta pakalpojums, kas cenrādī vairs nav — paliek izvēlēts, lai nemainīta saglabāšana to nepārliktu uz citu
+    const gone = sel && !services.some(s => s.id === sel) ? `<option value="${esc(sel)}" selected>${esc(name || 'Pakalpojums')} (dzēsts no cenrāža)</option>` : '';
+    return gone + services.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${svcOptText(s)}${s.active ? '' : ' (neaktīvs)'}</option>`).join('');
   }
   /* Varianta un ekstru izvēle pieraksta logā (#addonBox). Mainot izvēli, ilguma un cenas lauki tiek pārrēķināti.
      keep = true pirmajā reizē rediģējot — lauki paliek, kā saglabāti pierakstā. */
-  function addonFields(m, sel, keep, excludeId) {
-    const f = $('form', m), box = $('#addonBox', m), svc = svcById(f.serviceId.value);
+  function addonFields(m, sel, keep, excludeId, legacy) {
+    const f = $('form', m), box = $('#addonBox', m), real = svcById(f.serviceId.value);
+    // pieraksta paša saglabātais variants/ekstras, kuru cenrādī vairs nav — joprojām izvēlami (tikai tam pašam pakalpojumam)
+    const old = legacy && real && real.id === legacy.serviceId ? legacy : null;
+    const goneOpt = old && old.option && !(real.options || []).some(o => o.id === old.option.id) ? [{ ...old.option, gone: true }] : [];
+    const goneExs = old ? old.extras.filter(e => !(real.extras || []).some(x => x.id === e.id)).map(e => ({ ...e, gone: true })) : [];
+    const svc = real ? { ...real, options: [...(real.options || []), ...goneOpt], extras: [...(real.extras || []), ...goneExs] } : null;
     const opts = (svc && svc.options) || [], exs = (svc && svc.extras) || [];
+    const goneTxt = x => (x.gone ? ' — vairs nav cenrādī' : '');
     // jaunam pierakstam pēc noklusējuma pirmais variants; rediģējot — tikai tas, kas saglabāts pierakstā
     if (!opts.some(o => o.id === sel.optionId)) sel.optionId = opts.length && !keep ? opts[0].id : null;
     sel.extraIds = (sel.extraIds || []).filter(id => exs.some(e => e.id === id));
     box.innerHTML = !svc || (!opts.length && !exs.length) ? '' : `
       ${opts.length ? `<label class="field"><span>${esc(svc.optionsLabel || 'Variants')}</span><select class="input" id="bkOpt">
-        ${sel.optionId ? '' : '<option value="">— nav izvēlēts —</option>'}${opts.map(o => `<option value="${esc(o.id)}" ${o.id === sel.optionId ? 'selected' : ''}>${esc(o.name)}${addonPlus(o) ? ' (' + esc(addonPlus(o)) + ')' : ''}</option>`).join('')}</select></label>` : ''}
-      ${exs.length ? `<div class="field"><span>Ekstras</span><div class="bk-extras">${exs.map(e => `<label class="bk-extra"><input type="checkbox" value="${esc(e.id)}" ${sel.extraIds.includes(e.id) ? 'checked' : ''}><span>${esc(e.name)}${addonPlus(e) ? ` <small>${esc(addonPlus(e))}</small>` : ''}</span></label>`).join('')}</div></div>` : ''}
+        ${sel.optionId ? '' : '<option value="">— nav izvēlēts —</option>'}${opts.map(o => `<option value="${esc(o.id)}" ${o.id === sel.optionId ? 'selected' : ''}>${esc(o.name)}${addonPlus(o) ? ' (' + esc(addonPlus(o)) + ')' : ''}${goneTxt(o)}</option>`).join('')}</select></label>` : ''}
+      ${exs.length ? `<div class="field"><span>Ekstras</span><div class="bk-extras">${exs.map(e => `<label class="bk-extra"><input type="checkbox" value="${esc(e.id)}" ${sel.extraIds.includes(e.id) ? 'checked' : ''}><span>${esc(e.name)}${addonPlus(e) ? ` <small>${esc(addonPlus(e))}</small>` : ''}${e.gone ? ' <small>— vairs nav cenrādī</small>' : ''}</span></label>`).join('')}</div></div>` : ''}
       <p class="tiny muted" id="bkPriceHint"></p>`;
     const apply = fill => {
       if (!svc) return;
@@ -505,6 +513,8 @@
   async function bookingEditModal(id, b) {
     if (!b) return;
     await ensureClients();
+    // pakalpojums, ko šī lapa vēl nepazīst (izveidots citā cilnē/ierīcē) — pārlādē cenrādi, pirms uzskatīt to par dzēstu
+    if (!svcById(b.serviceId)) { try { services = (await API.get('/api/admin/services')).services; } catch { /* paliek esošais saraksts */ } }
     const dur = toMin(b.end) - toMin(b.start);
     const client = b.userId ? clients.find(c => c.id === b.userId) : null;
     const { el, close } = openModal({
@@ -520,7 +530,7 @@
         ${b.note ? `<div class="alert info" style="margin-bottom:16px"><b>Klienta komentārs:</b> ${esc(b.note)}</div>` : ''}
         <form class="form-grid">
           <div class="field full"><span>Statuss</span><div class="seg" id="stSeg" style="flex-wrap:wrap">${Object.entries(LV.status).map(([k, v]) => `<button type="button" data-st="${k}" class="${k === b.status ? 'on' : ''}">${v}</button>`).join('')}</div></div>
-          <label class="field full"><span>Pakalpojums</span><select class="input" name="serviceId">${serviceOptions(b.serviceId)}</select></label>
+          <label class="field full"><span>Pakalpojums</span><select class="input" name="serviceId">${serviceOptions(b.serviceId, b.serviceName)}</select></label>
           <div class="full bk-addons" id="addonBox"></div>
           <label class="field"><span>Datums</span><input class="input" type="date" name="date" value="${b.date}"></label>
           <label class="field"><span>Sākums</span><input class="input" type="time" name="start" step="300" value="${b.start}"></label>
@@ -533,14 +543,19 @@
     });
     const f = $('form', el);
     let status = b.status;
-    $$('#stSeg button', el).forEach(x => x.addEventListener('click', () => { status = x.dataset.st; $$('#stSeg button', el).forEach(y => y.classList.toggle('on', y === x)); }));
+    $$('#stSeg button', el).forEach(x => x.addEventListener('click', () => {
+      status = x.dataset.st; $$('#stSeg button', el).forEach(y => y.classList.toggle('on', y === x));
+      // cena „no–līdz”: atzīmējot vizīti kā notikušu, jāieraksta īstā cena
+      if (status === 'completed' && b.priceMax != null) { toast(`Cenrādī ${fmt.price(b.price, b.priceMax)} — ieraksti precīzo cenu laukā „Cena”.`); f.price.focus(); f.price.select(); }
+    }));
     // izvēle no pieraksta; ja variants/ekstra cenrādī vairs nav, tā vienkārši netiek atzīmēta (pieraksta nosaukumi paliek, kamēr nemaina)
     const sel = { optionId: b.optionId || null, extraIds: [...(b.extraIds || [])] };
     let selTouched = false;
-    f.serviceId.addEventListener('change', () => { sel.optionId = null; sel.extraIds = []; selTouched = true; addonFields(el, sel, false, b.id); slotChips(el, b.id); });
+    const legacy = { serviceId: b.serviceId, option: (b.addons || {}).option || null, extras: (b.addons || {}).extras || [] };
+    f.serviceId.addEventListener('change', () => { sel.optionId = null; sel.extraIds = []; selTouched = true; addonFields(el, sel, false, b.id, legacy); slotChips(el, b.id); });
     f.date.addEventListener('change', () => slotChips(el, b.id));
     f.duration.addEventListener('change', () => slotChips(el, b.id));
-    addonFields(el, sel, true, b.id);
+    addonFields(el, sel, true, b.id, legacy);
     $('#addonBox', el).addEventListener('change', () => { selTouched = true; });
     if (b.status === 'booked') slotChips(el, b.id);
     if ($('#openClient', el)) $('#openClient', el).addEventListener('click', () => { close(); clientModal(client); });
