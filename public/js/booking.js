@@ -8,8 +8,10 @@
   if (me && me.role === 'client') return location.replace('/konts');
 
   const S = info.settings;
-  const W = { step: 1, serviceId: null, month: null, date: null, start: null, name: '', phone: '', note: '', done: null };
+  const W = { step: 1, serviceId: null, optionId: null, extraIds: [], month: null, date: null, start: null, name: '', phone: '', note: '', done: null };
   const svcById = id => info.services.find(s => s.id === id);
+  // izvēlētā pakalpojuma kopējais ilgums un cena (ar variantu un ekstrām)
+  const calc = () => { const s = svcById(W.serviceId); return s ? svcCalc(s, W) : null; };
   const phoneHref = S.phone ? `tel:${S.phone.replace(/[^\d+]/g, '')}` : '';
 
   document.title = `Pieteikties vizītei — ${S.salonName}`;
@@ -30,7 +32,7 @@
 
   // pakalpojuma priekšizvēle no saites (?pakalpojums=…)
   const pre = new URLSearchParams(location.search).get('pakalpojums');
-  if (pre && svcById(pre) && !W.done) { W.serviceId = pre; W.step = 2; }
+  if (pre && svcById(pre) && !W.done) { W.serviceId = pre; W.step = svcHasAddons(svcById(pre)) ? 1 : 2; } // ar variantiem/ekstrām — vispirms izvēle
 
   /* ------------------------------------------------ sānu kartītes */
   function renderInfo() {
@@ -51,14 +53,16 @@
   }
 
   function renderSummary() {
-    const svc = svcById(W.serviceId);
+    const svc = svcById(W.serviceId), c = calc();
     const row = (k, v, on) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed rgba(255,255,255,.16)"><span style="opacity:.65">${k}</span><b style="text-align:right;${on ? '' : 'opacity:.45;font-weight:500'}">${v}</b></div>`;
     $('#summary').innerHTML = `<span class="eyebrow" style="color:var(--tertiary)">Tavs pieraksts</span>
       <div style="margin-top:12px;position:relative;z-index:1">
         ${row('Pakalpojums', svc ? esc(svc.name) : 'nav izvēlēts', !!svc)}
+        ${c && c.option ? row(esc(svc.optionsLabel || 'Variants'), esc(c.option.name), true) : ''}
+        ${c && c.extras.length ? row('Papildus', c.extras.map(e => esc(e.name)).join('<br>'), true) : ''}
         ${row('Datums', W.date ? fmt.dateLong(W.date) : '—', !!W.date)}
-        ${row('Laiks', W.start && svc ? `${W.start} – ${fromMin(toMin(W.start) + svc.duration)}` : '—', !!W.start)}
-        <div style="display:flex;justify-content:space-between;padding-top:14px;font-size:18px"><span style="opacity:.65">Cena</span><b>${svc ? fmt.money(svc.price) : '—'}</b></div>
+        ${row('Laiks', W.start && c ? `${W.start} – ${fromMin(toMin(W.start) + c.duration)}` : c && !c.needsOption ? fmt.dur(c.duration) : '—', !!W.start)}
+        <div style="display:flex;justify-content:space-between;padding-top:14px;font-size:18px"><span style="opacity:.65">Cena</span><b>${c && !c.needsOption ? fmt.price(c.price, c.priceMax) : svc ? svcRange(svc).price : '—'}</b></div>
       </div>`;
   }
 
@@ -87,23 +91,45 @@
       s.addEventListener('click', go);
       s.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     });
+    // bez izvēlēta varianta tālāk netiek (piem., atverot saiti vai pēc cenrāža maiņas)
+    if (W.step > 1 && (!calc() || calc().needsOption)) W.step = 1;
     if (W.step === 1) renderServices();
     if (W.step === 2) renderDateTime();
     if (W.step === 3) renderDetails();
   }
 
   function renderServices() {
-    $('#wbody').innerHTML = info.services.length ? `<div class="svc-pick">${info.services.map(s => `
-      <button type="button" class="svc-opt ${W.serviceId === s.id ? 'on' : ''}" data-svc="${s.id}">
+    $('#wbody').innerHTML = info.services.length ? `<div class="svc-pick">${info.services.map(s => { const r = svcRange(s); return `
+      <button type="button" class="svc-opt ${W.serviceId === s.id ? 'on' : ''}" data-svc="${s.id}" aria-pressed="${W.serviceId === s.id}">
         <span style="display:flex;align-items:center;gap:8px"><i class="dot" style="background:${esc(s.color)}"></i><b>${esc(s.name)}</b></span>
-        <span>${fmt.dur(s.duration)}${s.description ? ' · ' + esc(s.description) : ''}</span><span class="p">${fmt.money(s.price)}</span>
-      </button>`).join('')}</div>` : '<p class="muted">Pakalpojumi drīzumā.</p>';
+        <span>${r.duration}${s.description ? ' · ' + esc(s.description) : ''}</span><span class="p">${r.price}</span>
+      </button>`; }).join('')}</div><div id="addonBox"></div>` : '<p class="muted">Pakalpojumi drīzumā.</p>';
+    const showAddons = scroll => {
+      const svc = svcById(W.serviceId), box = $('#addonBox');
+      if (!box) return;
+      if (!svcHasAddons(svc)) { box.innerHTML = ''; return; }
+      box.innerHTML = `<div id="addonChooser"></div><div class="modal-foot" style="justify-content:flex-end">
+        <button type="button" class="btn" id="addonNext">Turpināt ${icon('arrowR')}</button></div>`;
+      const sync = () => { $('#addonNext').disabled = calc().needsOption; renderSummary(); };
+      // mainoties variantam vai ekstrām, mainās ilgums — iepriekš izvēlētais laiks vairs neder
+      renderAddonChooser($('#addonChooser'), svc, W, () => { W.date = null; W.start = null; sync(); });
+      sync();
+      $('#addonNext').addEventListener('click', () => { if (!calc().needsOption) { W.step = 2; render(true); $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
+      if (scroll) { box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); const first = $('#addonChooser input', box); if (first) first.focus({ preventScroll: true }); }
+    };
     $$('[data-svc]').forEach(b => b.addEventListener('click', () => {
-      if (W.serviceId !== b.dataset.svc) { W.date = null; W.start = null; }
-      W.serviceId = b.dataset.svc; W.step = 2;
+      if (W.serviceId !== b.dataset.svc) { W.date = null; W.start = null; W.optionId = null; W.extraIds = []; }
+      W.serviceId = b.dataset.svc;
+      if (svcHasAddons(svcById(W.serviceId))) { // vispirms variants un ekstras, tad laiks
+        $$('[data-svc]').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+        renderSummary(); showAddons(true);
+        return;
+      }
+      W.step = 2;
       render(true);
       $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    showAddons(false);
   }
 
   function renderDateTime() {
@@ -113,8 +139,11 @@
         <button type="button" class="btn" id="next" ${W.start ? '' : 'disabled'}>Turpināt ${icon('arrowR')}</button></div>`;
     $('#back').addEventListener('click', () => { W.step = 1; render(true); });
     $('#next').addEventListener('click', () => { if (W.start) { W.step = 3; render(true); } });
+    const svc = svcById(W.serviceId), c = calc();
     createDateTimePicker($('#picker'), {
-      service: svcById(W.serviceId), daysAhead: S.bookingDaysAhead, month: W.month, date: W.date, start: W.start, announce,
+      service: { id: svc.id, name: svc.name + (c.detail ? ` — ${c.detail}` : ''), duration: c.duration },
+      query: { ...(c.option ? { optionId: c.option.id } : {}), ...(c.extras.length ? { extras: c.extras.map(e => e.id).join(',') } : {}) },
+      daysAhead: S.bookingDaysAhead, month: W.month, date: W.date, start: W.start, announce,
       onChange: v => { W.date = v.date; W.start = v.start; W.month = v.month; const n = $('#next'); if (n) n.disabled = !v.start; renderSummary(); }
     });
   }
@@ -145,7 +174,7 @@
       if (!W.date || !W.start) { toast('Lūdzu izvēlies laiku.', 'error'); W.step = 2; render(true); return; }
       await withBusy(e.submitter, async () => {
         try {
-          const r = await API.post('/api/guest/bookings', { serviceId: W.serviceId, date: W.date, start: W.start, name: d.name, phone: d.phone, note: d.note, website: d.website });
+          const r = await API.post('/api/guest/bookings', { serviceId: W.serviceId, optionId: W.optionId, extraIds: W.extraIds, date: W.date, start: W.start, name: d.name, phone: d.phone, note: d.note, website: d.website });
           if (r.claimToken) { tokens.push({ t: r.claimToken, exp: Date.now() + 2 * 3600e3 - 60e3 }); tokens = tokens.slice(-10); store.set('guestTokens', tokens); }
           W.done = { booking: r.booking, name: r.name, phone: r.phone, hasToken: !!r.claimToken };
           store.set('guestDone', W.done);
@@ -153,6 +182,13 @@
           $('#wizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (x) {
           if (x.status === 409 && /laiks/.test(x.message)) { toast(x.message, 'error'); W.start = null; W.step = 2; render(true); return; }
+          // cenrādis pa to laiku mainīts (variants vai ekstra vairs nav pieejama) — jāizvēlas no jauna
+          if (x.status === 400 && /izvēlies/i.test(x.message)) {
+            toast(x.message, 'error');
+            try { info = await API.get('/api/public'); } catch { /* */ }
+            Object.assign(W, { optionId: null, extraIds: [], date: null, start: null, step: 1 }); if (!svcById(W.serviceId)) W.serviceId = null;
+            render(true); return;
+          }
           err.textContent = x.message; err.classList.remove('hidden');
         }
       });
@@ -167,7 +203,7 @@
         <div style="width:72px;height:72px;border-radius:50%;margin:0 auto 18px;display:grid;place-items:center;background:var(--ok-bg);color:var(--ok)">${icon('check', 'style="width:34px;height:34px"')}</div>
         <span class="eyebrow">Pieraksts apstiprināts</span>
         <h2 id="wstep" tabindex="-1" style="font-size:clamp(24px,3.4vw,30px);margin:10px 0 6px;letter-spacing:-.03em;outline:none">${fmt.dateLong(b.date)}, ${b.start}</h2>
-        <p class="muted">${esc(b.serviceName)} · ${fmt.money(b.price)}</p>
+        <p class="muted">${esc(b.serviceName)}${b.detail ? ` — ${esc(b.detail)}` : ''} · ${fmt.price(b.price, b.priceMax)}</p>
         ${S.address ? `<p class="muted small" style="margin-top:4px">${esc(S.address)}</p>` : ''}
         <p class="small" style="margin-top:14px;color:var(--ink-2)">Paldies, ${esc(name.split(' ')[0])}! Ja vajadzēs pārcelt vai atcelt${S.phone ? `, zvani <a href="${esc(phoneHref)}" style="font-weight:600">${esc(S.phone)}</a>` : ', sazinies ar salonu'}.</p>
       </div>
@@ -181,7 +217,7 @@
         <button type="button" class="btn btn-line" id="again">${icon('plus')} Vēl viens pieraksts</button><a class="btn btn-ghost" href="/">Uz sākumlapu</a></div>`;
     const bindAgain = () => $('#again').addEventListener('click', () => {
       store.del('guestDone'); // atslēgas paliek — nākamais pieraksts arī varēs tikt piesaistīts kontam
-      Object.assign(W, { step: 1, serviceId: null, date: null, start: null, note: '', month: null, name: W.done.name || W.name, phone: W.done.phone || W.phone, done: null });
+      Object.assign(W, { step: 1, serviceId: null, optionId: null, extraIds: [], date: null, start: null, note: '', month: null, name: W.done.name || W.name, phone: W.done.phone || W.phone, done: null });
       render(true);
     });
     if (!live || !S.allowRegistration || me) { box.innerHTML = again; bindAgain(); return; }

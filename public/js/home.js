@@ -56,7 +56,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center"><div class="swatch" style="background:${esc(x.color)}">${icon(SVC_ICONS[i % SVC_ICONS.length])}</div><span class="book">Pieteikties ${icon('arrowR')}</span></div>
         <h3>${esc(x.name)}</h3>
         <p>${esc(x.description || '')}</p>
-        <div class="meta"><span class="price">${fmt.money(x.price)}</span><span class="dur">${icon('clock')}${fmt.dur(x.duration)}</span></div>
+        <div class="meta"><span class="price">${svcRange(x).price}</span><span class="dur">${icon('clock')}${svcRange(x).duration}</span></div>
       </a>`).join('') || '<p class="muted">Pakalpojumi drīzumā.</p>';
 
     const order = [1, 2, 3, 4, 5, 6, 0];

@@ -17,6 +17,17 @@ const pick = a => a[Math.floor(rnd() * a.length)];
 
 const db = store.defaults();
 store.createAdmin(db, 'admin', 'admin123');
+{
+  const byName = n => db.services.find(s => s.name === n);
+  const add = (name, duration, price, kind) => ({ id: U.uid(kind), name, duration, price });
+  Object.assign(byName('Matu krāsošana'), {
+    optionsLabel: 'Matu garums',
+    options: [add('Īsi mati', 0, 0, 'opt'), add('Vidēji gari mati', 15, 10, 'opt'), add('Gari mati', 30, 20, 'opt')],
+    extras: [add('Atjaunojoša maska', 15, 8, 'ext'), add('Fēnošana un ieveidošana', 20, 10, 'ext')]
+  });
+  Object.assign(byName('Balayage / Airtouch'), { priceMax: 160 });
+  Object.assign(byName('Matu kopšanas procedūra'), { extras: [add('Galvas masāža', 10, 5, 'ext')] });
+}
 
 const first = ['Anna', 'Laura', 'Elīza', 'Katrīna', 'Marta', 'Paula', 'Ieva', 'Sanita', 'Linda', 'Dace', 'Kristīne', 'Agnese', 'Jānis', 'Mārtiņš', 'Edgars', 'Rūta', 'Inese', 'Baiba', 'Zane', 'Evija', 'Andris', 'Līga', 'Sandra', 'Madara', 'Elza', 'Toms'];
 const last = ['Bērziņa', 'Kalniņa', 'Ozola', 'Liepiņa', 'Krūmiņa', 'Zariņa', 'Eglīte', 'Vītola', 'Jansone', 'Priedīte', 'Lāce', 'Siliņa', 'Bērziņš', 'Kalniņš', 'Ozols', 'Grava', 'Pētersone', 'Klaviņa', 'Strazdiņa', 'Āboliņa', 'Liepiņš', 'Dūmiņa', 'Saulīte', 'Riekstiņa', 'Mežule', 'Vilks'];

@@ -111,7 +111,7 @@
           <div class="agenda">${s.today.length ? s.today.map(b => `
             <div class="agenda-item ${toMin(b.end) < now ? 'past' : ''}" data-bk="${b.id}">
               <div class="t">${b.start}<small>${b.end}</small></div><i class="bar" style="background:${esc(b.color)}"></i>
-              <div style="min-width:0"><b>${esc(b.clientName)}</b><span>${esc(b.serviceName)}</span></div>
+              <div style="min-width:0"><b>${esc(b.clientName)}</b><span>${svcLine(b)}</span></div>
               <span class="badge ${b.status}">${LV.status[b.status]}</span></div>`).join('')
             : `<div class="empty">${icon('leaf')}<p>Šodien vizīšu nav.<br>Laiks atpūtai!</p></div>`}</div>
         </section>
@@ -273,8 +273,8 @@
       if (cluster.length) flush();
       evs.forEach(({ b, s, e, lane, n }) => {
         const short = (e - s) < 40;
-        html += `<div class="ev ${b.status}" data-bk="${b.id}" style="--c:${esc(b.color)};top:${(s - minS) * PPM + 1}px;height:${(e - s) * PPM - 2}px;left:calc(${(lane / n) * 100}% + 4px);right:auto;width:calc(${100 / n}% - 8px)" title="${esc(b.clientName)} — ${esc(b.serviceName)}">
-          ${short ? `<b><span class="tm">${b.start}</span> ${esc(b.clientName)}</b>` : `<span class="tm">${b.start}–${b.end}</span><b>${esc(b.clientName)}</b><span>${esc(b.serviceName)}</span>`}</div>`;
+        html += `<div class="ev ${b.status}" data-bk="${b.id}" style="--c:${esc(b.color)};top:${(s - minS) * PPM + 1}px;height:${(e - s) * PPM - 2}px;left:calc(${(lane / n) * 100}% + 4px);right:auto;width:calc(${100 / n}% - 8px)" title="${esc(b.clientName)} — ${svcLine(b)}">
+          ${short ? `<b><span class="tm">${b.start}</span> ${esc(b.clientName)}</b>` : `<span class="tm">${b.start}–${b.end}</span><b>${esc(b.clientName)}</b><span>${svcLine(b)}</span>`}</div>`;
       });
       if (d === t && nowM >= minS && nowM <= maxE) html += `<div class="now" style="top:${(nowM - minS) * PPM}px"></div>`;
       html += '</div>';
@@ -304,7 +304,7 @@
     const inMonth = counted(bk.filter(b => b.date.slice(0, 7) === mo));
     if (inMonth.length) $('#calTitle').title = `${$('#calTitle').textContent} — ${plPier(inMonth.length)}, ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}`;
     if (inMonth.length) $('#calTitle').innerHTML = `${esc($('#calTitle').textContent)} <small>${plPier(inMonth.length)} · ${fmt.money(inMonth.reduce((a, b) => a + b.price, 0))}</small>`;
-    const evTitle = b => `${b.start}–${b.end} ${b.clientName} — ${b.serviceName}${b.status !== 'booked' ? ' (' + LV.status[b.status] + ')' : ''}`;
+    const evTitle = b => `${b.start}–${b.end} ${b.clientName} — ${b.serviceName}${b.detail ? ' · ' + b.detail : ''}${b.status !== 'booked' ? ' (' + LV.status[b.status] + ')' : ''}`;
 
     let html = '<div class="month-grid">' + [1, 2, 3, 4, 5, 6, 0].map(w => `<div class="dow">${LV.daysShort[w]}</div>`).join('');
     days.forEach(d => {
@@ -325,7 +325,7 @@
         <div style="display:flex;gap:8px"><button class="btn btn-sm btn-ghost" id="mOpenDay">Dienas skats</button><button class="btn btn-sm btn-accent" id="mNew">${icon('plus')}Pieraksts</button></div></div>
       ${closures.has(sel) ? `<p class="muted small">${esc(closures.get(sel).reason || 'Slēgts')}</p>` : ''}
       ${selList.length ? selList.map(b => `<button type="button" class="mrow ${b.status}" data-bk="${b.id}"><i class="dot" style="background:${esc(b.color)}"></i>
-          <span class="tm">${b.start}–${b.end}</span><span class="who"><b>${esc(b.clientName)}</b><small>${esc(b.serviceName)}</small></span>
+          <span class="tm">${b.start}–${b.end}</span><span class="who"><b>${esc(b.clientName)}</b><small>${svcLine(b)}</small></span>
           ${b.status !== 'booked' ? `<span class="badge ${b.status}">${LV.status[b.status]}</span>` : ''}</button>`).join('')
         : '<p class="muted small">Šajā dienā pierakstu nav.</p>'}</div>`;
     $('#calBody').innerHTML = html;
@@ -383,8 +383,8 @@
         <td style="white-space:nowrap"><b>${fmt.dateShort(b.date)}</b> <span class="muted small">${LV.daysShort[parseD(b.date).getDay()]}</span></td>
         <td style="font-variant-numeric:tabular-nums;white-space:nowrap">${b.start}–${b.end}</td>
         <td><div class="who"><span class="avatar hide-sm">${fmt.initials(b.clientName)}</span><div><b>${esc(b.clientName)}</b><small>${esc(b.clientPhone || (b.guest ? 'bez konta' : ''))}</small></div></div></td>
-        <td class="hide-sm"><span style="display:inline-flex;align-items:center;gap:8px"><i class="dot" style="background:${esc(b.color)}"></i>${esc(b.serviceName)}</span></td>
-        <td class="num">${fmt.money(b.price)}</td><td><span class="badge ${b.status}">${LV.status[b.status]}</span></td></tr>`).join('')}</tbody></table>`
+        <td class="hide-sm"><span style="display:inline-flex;align-items:center;gap:8px"><i class="dot" style="background:${esc(b.color)}"></i>${svcLine(b)}</span></td>
+        <td class="num" style="white-space:nowrap">${fmt.price(b.price, b.priceMax)}</td><td><span class="badge ${b.status}">${LV.status[b.status]}</span></td></tr>`).join('')}</tbody></table>`
       : `<div class="empty">${icon('search')}<p>Nekas netika atrasts.</p></div>`;
     $$('#listTable [data-bk]').forEach(tr => tr.addEventListener('click', () => bookingEditModal(tr.dataset.bk, rows.find(b => b.id === tr.dataset.bk))));
   }
@@ -397,8 +397,39 @@
     else if (location.hash === '' || location.hash === '#parskats') renderDashboard();
   };
 
+  // „Pakalpojums · Variants + Ekstras” (droši ievietojams HTML)
+  const svcLine = b => esc(b.serviceName) + (b.detail ? ` · ${esc(b.detail)}` : '');
+  const svcOptText = s => `${esc(s.name)} — ${svcRange(s).duration}, ${svcRange(s).price}`;
   function serviceOptions(sel) {
-    return services.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${esc(s.name)} — ${fmt.dur(s.duration)}, ${fmt.money(s.price)}${s.active ? '' : ' (neaktīvs)'}</option>`).join('');
+    return services.map(s => `<option value="${s.id}" ${s.id === sel ? 'selected' : ''}>${svcOptText(s)}${s.active ? '' : ' (neaktīvs)'}</option>`).join('');
+  }
+  /* Varianta un ekstru izvēle pieraksta logā (#addonBox). Mainot izvēli, ilguma un cenas lauki tiek pārrēķināti.
+     keep = true pirmajā reizē rediģējot — lauki paliek, kā saglabāti pierakstā. */
+  function addonFields(m, sel, keep, excludeId) {
+    const f = $('form', m), box = $('#addonBox', m), svc = svcById(f.serviceId.value);
+    const opts = (svc && svc.options) || [], exs = (svc && svc.extras) || [];
+    // jaunam pierakstam pēc noklusējuma pirmais variants; rediģējot — tikai tas, kas saglabāts pierakstā
+    if (!opts.some(o => o.id === sel.optionId)) sel.optionId = opts.length && !keep ? opts[0].id : null;
+    sel.extraIds = (sel.extraIds || []).filter(id => exs.some(e => e.id === id));
+    box.innerHTML = !svc || (!opts.length && !exs.length) ? '' : `
+      ${opts.length ? `<label class="field"><span>${esc(svc.optionsLabel || 'Variants')}</span><select class="input" id="bkOpt">
+        ${sel.optionId ? '' : '<option value="">— nav izvēlēts —</option>'}${opts.map(o => `<option value="${esc(o.id)}" ${o.id === sel.optionId ? 'selected' : ''}>${esc(o.name)}${addonPlus(o) ? ' (' + esc(addonPlus(o)) + ')' : ''}</option>`).join('')}</select></label>` : ''}
+      ${exs.length ? `<div class="field"><span>Ekstras</span><div class="bk-extras">${exs.map(e => `<label class="bk-extra"><input type="checkbox" value="${esc(e.id)}" ${sel.extraIds.includes(e.id) ? 'checked' : ''}><span>${esc(e.name)}${addonPlus(e) ? ` <small>${esc(addonPlus(e))}</small>` : ''}</span></label>`).join('')}</div></div>` : ''}
+      <p class="tiny muted" id="bkPriceHint"></p>`;
+    const apply = fill => {
+      if (!svc) return;
+      const c = svcCalc(svc, sel);
+      if (fill) { f.duration.value = c.duration; f.price.value = c.price; }
+      const hint = $('#bkPriceHint', box);
+      if (hint) hint.textContent = `Pēc cenrāža: ${fmt.dur(c.duration)}, ${fmt.price(c.price, c.priceMax)}${c.priceMax != null ? ' — pēc vizītes ieraksti precīzo cenu laukā „Cena”.' : ''}`;
+    };
+    box.onchange = e => {
+      if (e.target.id === 'bkOpt') sel.optionId = e.target.value || null;
+      else if (e.target.type === 'checkbox') sel.extraIds = $$('.bk-extra input:checked', box).map(i => i.value);
+      else return;
+      apply(true); slotChips(m, excludeId);
+    };
+    apply(!keep);
   }
 
   async function slotChips(m, excludeId) {
@@ -409,6 +440,7 @@
     box.innerHTML = '<span class="muted small">Ielādē brīvos laikus…</span>';
     try {
       const q = new URLSearchParams({ serviceId, date }); if (excludeId) q.set('exclude', excludeId);
+      if (Number(f.duration.value) >= 5) q.set('duration', f.duration.value); // ar izvēlēto variantu/ekstrām vai ar roku ievadīts ilgums
       const { slots } = await API.get('/api/slots?' + q);
       box.innerHTML = slots.length ? `<span class="label" style="display:block;margin-bottom:8px">Brīvie laiki</span><div class="slots">${slots.map(s => `<button type="button" class="slot ${s === f.start.value ? 'on' : ''}" data-s="${s}" style="height:34px;min-width:64px">${s}</button>`).join('')}</div>`
         : '<span class="muted small">Šajā dienā brīvu laiku nav (vari ievadīt laiku manuāli).</span>';
@@ -438,7 +470,8 @@
           ${clients.filter(c => c.active).map(c => `<option value="${c.id}" ${c.id === userId ? 'selected' : ''}>${esc(c.name)}${c.phone ? ' · ' + esc(c.phone) : ''}</option>`).join('')}</select></label>
         <label class="field guest"><span>Vārds</span><input class="input" name="guestName" placeholder="Klienta vārds"></label>
         <label class="field guest"><span>Tālrunis</span><input class="input" name="guestPhone" type="tel" placeholder="+371 …"></label>
-        <label class="field full"><span>Pakalpojums</span><select class="input" name="serviceId">${active.map(s => `<option value="${s.id}">${esc(s.name)} — ${fmt.dur(s.duration)}, ${fmt.money(s.price)}</option>`).join('')}</select></label>
+        <label class="field full"><span>Pakalpojums</span><select class="input" name="serviceId">${active.map(s => `<option value="${s.id}">${svcOptText(s)}</option>`).join('')}</select></label>
+        <div class="full bk-addons" id="addonBox"></div>
         <label class="field"><span>Datums</span><input class="input" type="date" name="date" value="${date || todayStr()}" required></label>
         <label class="field"><span>Sākums</span><input class="input" type="time" name="start" step="300" value="${start || ''}" required></label>
         <div class="full" id="slotChips"></div>
@@ -452,14 +485,17 @@
     const syncGuest = () => $$('.guest', el).forEach(x => x.classList.toggle('hidden', !!f.userId.value));
     syncGuest();
     f.userId.addEventListener('change', syncGuest);
-    f.serviceId.addEventListener('change', () => { const s = svcById(f.serviceId.value); f.duration.value = s.duration; f.price.value = s.price; slotChips(el); });
+    const sel = { optionId: null, extraIds: [] };
+    f.serviceId.addEventListener('change', () => { sel.optionId = null; sel.extraIds = []; addonFields(el, sel, false); slotChips(el); });
     f.date.addEventListener('change', () => slotChips(el));
+    f.duration.addEventListener('change', () => slotChips(el));
+    addonFields(el, sel, false);
     slotChips(el);
     $('#saveBk', el).addEventListener('click', e => withBusy(e.currentTarget, async () => {
       if (!f.reportValidity()) return;
       const data = formData(f);
       try {
-        const r = await saveWithConflict(force => API.post('/api/admin/bookings', { ...data, force }));
+        const r = await saveWithConflict(force => API.post('/api/admin/bookings', { ...data, optionId: sel.optionId, extraIds: sel.extraIds, force }));
         if (!r) return;
         toast('Pieraksts izveidots.'); close(); refreshCurrent();
       } catch (x) { toast(x.message, 'error'); }
@@ -475,6 +511,7 @@
       title: b.clientName, wide: true,
       subtitle: `${fmt.dateLong(b.date)} · ${b.start}–${b.end} · <span class="badge ${b.status}" style="vertical-align:middle">${LV.status[b.status]}</span>`,
       body: `
+        ${b.detail ? `<p class="small" style="margin:-6px 0 14px"><b>${esc(b.serviceName)}</b> · ${esc(b.detail)}${b.priceMax != null ? ` · ${fmt.price(b.price, b.priceMax)}` : ''}</p>` : b.priceMax != null ? `<p class="small muted" style="margin:-6px 0 14px">Cena pēc cenrāža: ${fmt.price(b.price, b.priceMax)}</p>` : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
           ${b.clientPhone ? `<a class="btn btn-sm btn-ghost" href="tel:${esc(b.clientPhone.replace(/\s/g, ''))}">${icon('phone')}${esc(b.clientPhone)}</a>` : ''}
           ${client ? `<button type="button" class="btn btn-sm btn-ghost" id="openClient">${icon('user')}Klienta kartiņa</button>` : '<span class="chip">Klients bez konta</span>'}
@@ -484,6 +521,7 @@
         <form class="form-grid">
           <div class="field full"><span>Statuss</span><div class="seg" id="stSeg" style="flex-wrap:wrap">${Object.entries(LV.status).map(([k, v]) => `<button type="button" data-st="${k}" class="${k === b.status ? 'on' : ''}">${v}</button>`).join('')}</div></div>
           <label class="field full"><span>Pakalpojums</span><select class="input" name="serviceId">${serviceOptions(b.serviceId)}</select></label>
+          <div class="full bk-addons" id="addonBox"></div>
           <label class="field"><span>Datums</span><input class="input" type="date" name="date" value="${b.date}"></label>
           <label class="field"><span>Sākums</span><input class="input" type="time" name="start" step="300" value="${b.start}"></label>
           <div class="full" id="slotChips"></div>
@@ -496,12 +534,19 @@
     const f = $('form', el);
     let status = b.status;
     $$('#stSeg button', el).forEach(x => x.addEventListener('click', () => { status = x.dataset.st; $$('#stSeg button', el).forEach(y => y.classList.toggle('on', y === x)); }));
-    f.serviceId.addEventListener('change', () => { const s = svcById(f.serviceId.value); if (s) { f.duration.value = s.duration; f.price.value = s.price; } slotChips(el, b.id); });
+    // izvēle no pieraksta; ja variants/ekstra cenrādī vairs nav, tā vienkārši netiek atzīmēta (pieraksta nosaukumi paliek, kamēr nemaina)
+    const sel = { optionId: b.optionId || null, extraIds: [...(b.extraIds || [])] };
+    let selTouched = false;
+    f.serviceId.addEventListener('change', () => { sel.optionId = null; sel.extraIds = []; selTouched = true; addonFields(el, sel, false, b.id); slotChips(el, b.id); });
     f.date.addEventListener('change', () => slotChips(el, b.id));
+    f.duration.addEventListener('change', () => slotChips(el, b.id));
+    addonFields(el, sel, true, b.id);
+    $('#addonBox', el).addEventListener('change', () => { selTouched = true; });
     if (b.status === 'booked') slotChips(el, b.id);
     if ($('#openClient', el)) $('#openClient', el).addEventListener('click', () => { close(); clientModal(client); });
     $('#saveBk', el).addEventListener('click', e => withBusy(e.currentTarget, async () => {
       const data = { ...formData(f), status };
+      if (selTouched) Object.assign(data, { optionId: sel.optionId || '', extraIds: sel.extraIds }); // nemainītu izvēli nesūta — pieraksta nosaukumi paliek
       try {
         const r = await saveWithConflict(force => API.put(`/api/admin/bookings/${b.id}`, { ...data, force }));
         if (!r) return;
@@ -572,7 +617,7 @@
         </form>
         ${isNew ? '' : `<hr style="border:0;border-top:1px solid var(--line);margin:22px 0">
           <div class="card-head" style="margin-bottom:10px"><h3>Vizīšu vēsture</h3><button class="btn btn-sm btn-sage" id="bookFor">${icon('plus')}Pierakstīt</button></div>
-          <div style="max-height:260px;overflow:auto">${history.length ? `<table class="table"><tbody>${history.map(b => `<tr><td style="white-space:nowrap">${fmt.dateShort(b.date)} ${b.date.slice(0, 4)}</td><td>${b.start}</td><td>${esc(b.serviceName)}</td><td class="num">${fmt.money(b.price)}</td><td><span class="badge ${b.status}">${LV.status[b.status]}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Vēl nav vizīšu.</p>'}</div>`}`,
+          <div style="max-height:260px;overflow:auto">${history.length ? `<table class="table"><tbody>${history.map(b => `<tr><td style="white-space:nowrap">${fmt.dateShort(b.date)} ${b.date.slice(0, 4)}</td><td>${b.start}</td><td>${svcLine(b)}</td><td class="num">${fmt.money(b.price)}</td><td><span class="badge ${b.status}">${LV.status[b.status]}</span></td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Vēl nav vizīšu.</p>'}</div>`}`,
       foot: isNew ? `<button class="btn btn-line" data-close>Atcelt</button><button class="btn btn-accent" id="saveCl">Izveidot klientu</button>`
         : `<button class="btn btn-danger spacer" id="delCl">${icon('trash')}Dzēst</button><button class="btn btn-line" id="resetPw">${icon('key')}Jauna parole</button><button class="btn" id="saveCl">Saglabāt</button>`
     });
@@ -617,7 +662,8 @@
           <div style="display:flex;justify-content:space-between;align-items:center"><div class="swatch" style="background:${esc(s.color)}">${icon('scissors')}</div>
             ${s.active ? '<span class="badge completed">Aktīvs</span>' : '<span class="badge cancelled">Paslēpts</span>'}</div>
           <h3>${esc(s.name)}</h3><p>${esc(s.description || '')}</p>
-          <div class="meta"><span class="price">${fmt.money(s.price)}</span><span class="dur">${icon('clock')}${fmt.dur(s.duration)}</span></div>
+          <div class="meta"><span class="price">${svcRange(s).price}</span><span class="dur">${icon('clock')}${svcRange(s).duration}</span></div>
+          ${svcHasAddons(s) ? `<p class="tiny muted svc-addons">${[(s.options || []).length ? `Varianti: ${s.options.length}` : '', (s.extras || []).length ? `Ekstras: ${s.extras.length}` : ''].filter(Boolean).join(' · ')}</p>` : ''}
         </article>`).join('')}</div>`;
     $('#newSvc').addEventListener('click', () => serviceModal(null));
     $$('[data-svc]').forEach(c => {
@@ -634,8 +680,18 @@
       body: `<form class="form-grid">
         <label class="field full"><span>Nosaukums</span><input class="input" name="name" value="${esc(s?.name || '')}" required></label>
         <label class="field full"><span>Apraksts</span><textarea class="input" name="description" maxlength="300">${esc(s?.description || '')}</textarea></label>
-        <label class="field"><span>Ilgums (min)</span><input class="input" type="number" name="duration" min="5" step="5" value="${s?.duration || 60}" required></label>
+        <label class="field full"><span>Ilgums (min)</span><input class="input" type="number" name="duration" min="5" step="5" value="${s?.duration || 60}" required style="max-width:200px"></label>
         <label class="field"><span>Cena (€)</span><input class="input" type="number" name="price" min="0" step="0.5" value="${s?.price ?? ''}" required></label>
+        <label class="field"><span>Cena līdz (€) <span class="muted">— ja cena ir „no–līdz”</span></span><input class="input" type="number" name="priceMax" min="0" step="0.5" value="${s?.priceMax ?? ''}" placeholder="nav obligāti"></label>
+        <div class="full addon-edit" id="optEdit">
+          <div class="addon-edit-head"><div><b>Varianti</b><p class="tiny muted">Klients izvēlas vienu (piem., matu garumu). Laiks un cena tiek pieskaitīti pamata pakalpojumam.</p></div></div>
+          <label class="field" style="max-width:320px"><span>Izvēles nosaukums</span><input class="input" name="optionsLabel" maxlength="40" value="${esc(s?.optionsLabel || '')}" placeholder="Piem., Matu garums"></label>
+          <div class="addon-rows" data-rows></div>
+          <button type="button" class="btn btn-sm btn-ghost" data-add>${icon('plus')}Pievienot variantu</button></div>
+        <div class="full addon-edit" id="extEdit">
+          <div class="addon-edit-head"><div><b>Ekstras</b><p class="tiny muted">Klients var pievienot vienu vai vairākas (piem., masku, fēnošanu).</p></div></div>
+          <div class="addon-rows" data-rows></div>
+          <button type="button" class="btn btn-sm btn-ghost" data-add>${icon('plus')}Pievienot ekstru</button></div>
         <div class="field full"><span>Krāsa kalendārā</span><div class="color-pick">${PALETTE.map(c => `<label><input type="radio" name="color" value="${c}" ${c === color ? 'checked' : ''}><span style="background:${c}"></span></label>`).join('')}</div></div>
         <label class="field"><span>Secība sarakstā</span><input class="input" type="number" name="order" min="0" value="${s?.order ?? services.length}"></label>
         <label class="switch" style="align-self:end;padding-bottom:10px"><input type="checkbox" name="active" ${s?.active === false ? '' : 'checked'}><span class="track"></span>Redzams klientiem</label>
@@ -643,10 +699,31 @@
       foot: `${isNew ? '' : `<button class="btn btn-danger spacer" id="delSvc">${icon('trash')}Dzēst</button>`}<button class="btn btn-line" data-close>Atcelt</button><button class="btn" id="saveSvc">Saglabāt</button>`
     });
     const f = $('form', el);
+    // variantu / ekstru rindas: nosaukums + papildu laiks + papildu cena (laukiem nav „name”, tāpēc formData tos neņem)
+    const addonRow = (x = {}) => `<div class="addon-row" data-id="${esc(x.id || '')}">
+        <input class="input" data-k="name" maxlength="60" placeholder="Nosaukums" value="${esc(x.name || '')}" aria-label="Nosaukums">
+        <label><span>+ min</span><input class="input" data-k="duration" type="number" min="0" max="600" step="5" value="${x.duration ?? 0}" aria-label="Papildu laiks minūtēs"></label>
+        <label><span>+ €</span><input class="input" data-k="price" type="number" min="0" step="0.5" value="${x.price ?? 0}" aria-label="Papildu cena eiro"></label>
+        <button type="button" class="icon-btn" data-del aria-label="Noņemt">${icon('x')}</button></div>`;
+    for (const [id, list] of [['#optEdit', s?.options], ['#extEdit', s?.extras]]) {
+      const boxEl = $(id, el), rows = $('[data-rows]', boxEl);
+      rows.innerHTML = (list || []).map(addonRow).join('');
+      $('[data-add]', boxEl).addEventListener('click', () => {
+        if ($$('.addon-row', rows).length >= 20) return toast('Ne vairāk kā 20 ieraksti.', 'error');
+        rows.insertAdjacentHTML('beforeend', addonRow()); $('.addon-row:last-child [data-k=name]', rows).focus();
+      });
+      rows.addEventListener('click', e => { const d = e.target.closest('[data-del]'); if (d) d.closest('.addon-row').remove(); });
+    }
+    const readRows = id => $$(`${id} .addon-row`, el).map(r => ({ id: r.dataset.id || undefined, name: $('[data-k=name]', r).value.trim(), duration: $('[data-k=duration]', r).value, price: $('[data-k=price]', r).value }));
     $('#saveSvc', el).addEventListener('click', e => withBusy(e.currentTarget, async () => {
       if (!f.reportValidity()) return;
+      const options = readRows('#optEdit'), extras = readRows('#extEdit');
+      const blank = [...$$('.addon-row', el)].find(r => !$('[data-k=name]', r).value.trim());
+      if (blank) { toast('Ieraksti nosaukumu katram variantam un ekstrai (vai noņem tukšo rindu).', 'error'); $('[data-k=name]', blank).focus(); return; }
+      const data = { ...formData(f), options, extras };
+      if (data.priceMax !== '' && data.priceMax != null && !(Number(data.priceMax) > Number(data.price))) { toast('Cenai „līdz” jābūt lielākai par cenu „no” (vai atstāj to tukšu).', 'error'); f.priceMax.focus(); return; }
       try {
-        if (isNew) await API.post('/api/admin/services', formData(f)); else await API.put(`/api/admin/services/${s.id}`, formData(f));
+        if (isNew) await API.post('/api/admin/services', data); else await API.put(`/api/admin/services/${s.id}`, data);
         toast('Pakalpojums saglabāts.'); close(); renderServices();
       } catch (x) { toast(x.message, 'error'); }
     }));

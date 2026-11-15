@@ -55,6 +55,9 @@ const fmt = {
     return fmt.dateLong(s);
   },
   dur: m => m < 60 ? `${m} min` : (m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`),
+  // cena vai cenu diapazons: „45 €” vai „45–60 €”
+  price: (min, max) => max != null && Number(max) > Number(min) ? `${fmt.money(min).replace(/[\s\u00a0]*€/, '')}–${fmt.money(max)}` : fmt.money(min),
+  durRange: (min, max) => max > min ? `${fmt.dur(min)} – ${fmt.dur(max)}` : fmt.dur(min),
   initials: name => (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 };
 
@@ -172,6 +175,33 @@ async function withBusy(btn, fn) {
   btn.innerHTML = '<span class="spinner"></span>';
   try { return await fn(); } finally { btn.disabled = false; btn.innerHTML = html; }
 }
+
+/* ---------- pakalpojuma varianti un ekstras ----------
+   Pakalpojumam var būt varianti (klients izvēlas vienu) un ekstras (var pievienot vairākas); katram savs papildu laiks un cena. */
+const svcHasAddons = svc => !!svc && ((svc.options || []).length > 0 || (svc.extras || []).length > 0);
+// kopējais ilgums un cena izvēlei { optionId, extraIds }
+function svcCalc(svc, sel = {}) {
+  const option = (svc.options || []).find(o => o.id === sel.optionId) || null;
+  const extras = (svc.extras || []).filter(e => (sel.extraIds || []).includes(e.id));
+  const add = [option, ...extras].filter(Boolean);
+  const dp = add.reduce((a, x) => a + x.price, 0);
+  const round = n => Math.round(n * 100) / 100;
+  return {
+    option, extras, needsOption: (svc.options || []).length > 0 && !option,
+    duration: svc.duration + add.reduce((a, x) => a + x.duration, 0),
+    price: round(svc.price + dp), priceMax: svc.priceMax != null && svc.priceMax > svc.price ? round(svc.priceMax + dp) : null,
+    detail: [option ? option.name : '', extras.map(e => e.name).join(', ')].filter(Boolean).join(' + ')
+  };
+}
+// pakalpojuma kartītei: lētākais–dārgākais variants (bez ekstrām), īsākais–garākais ilgums
+function svcRange(svc) {
+  const o = svc.options || [];
+  const lo = k => (o.length ? Math.min(...o.map(x => x[k])) : 0), hi = k => (o.length ? Math.max(...o.map(x => x[k])) : 0);
+  const pMin = svc.price + lo('price'), pMax = (svc.priceMax != null && svc.priceMax > svc.price ? svc.priceMax : svc.price) + hi('price');
+  return { price: fmt.price(pMin, pMax), duration: fmt.durRange(svc.duration + lo('duration'), svc.duration + hi('duration')), extras: (svc.extras || []).length };
+}
+// „+15 min · +10 €” (tukšs, ja nekas netiek pieskaitīts)
+const addonPlus = x => [x.duration ? `+${fmt.dur(x.duration)}` : '', x.price ? `+${fmt.money(x.price)}` : ''].filter(Boolean).join(' · ');
 
 function formData(form) {
   const o = {};

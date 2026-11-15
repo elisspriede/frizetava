@@ -28,6 +28,33 @@ const OCCUPYING = new Set(['booked', 'completed']);
 const STATUSES = ['booked', 'completed', 'cancelled', 'noshow'];
 const getUser = id => db.users.find(u => u.id === id);
 const getService = id => db.services.find(s => s.id === id);
+const money2 = n => Math.round(Number(n) * 100) / 100;
+/* Pakalpojuma varianti (klients izvēlas vienu) un ekstras (var izvēlēties vairākas): katram savs papildu laiks un cena.
+   Atgriež izvēli un kopējo ilgumu/cenu. strict — klienta pieteikumiem (variants obligāts, nezināma ekstra ir kļūda);
+   citādi (admins, brīvo laiku meklēšana) nezināmais tiek ignorēts. */
+function pickAddons(svc, optionId, extraIds, strict) {
+  const opts = Array.isArray(svc.options) ? svc.options : [], exs = Array.isArray(svc.extras) ? svc.extras : [];
+  let option = opts.length && typeof optionId === 'string' ? opts.find(o => o.id === optionId) || null : null;
+  if (opts.length && !option && strict) fail(400, `Lūdzu izvēlies: ${svc.optionsLabel || 'variantu'}.`);
+  let ids = typeof extraIds === 'string' ? extraIds.split(',') : Array.isArray(extraIds) ? extraIds : [];
+  ids = [...new Set(ids.filter(x => typeof x === 'string' && x))].slice(0, 30);
+  const extras = ids.map(id => exs.find(e => e.id === id));
+  if (extras.some(e => !e) && strict) fail(400, 'Izvēlētais papildinājums vairs nav pieejams. Lūdzu izvēlies vēlreiz.');
+  const add = [option, ...extras].filter(Boolean);
+  const dp = add.reduce((a, x) => a + (Number(x.price) || 0), 0), dd = add.reduce((a, x) => a + (Number(x.duration) || 0), 0);
+  return {
+    option, extras: extras.filter(Boolean), duration: svc.duration + dd, price: money2(svc.price + dp),
+    priceMax: svc.priceMax != null && svc.priceMax > svc.price ? money2(svc.priceMax + dp) : null
+  };
+}
+const addonSnapshot = sel => ({
+  optionId: sel.option ? sel.option.id : null, optionName: sel.option ? sel.option.name : '',
+  extras: sel.extras.map(e => ({ id: e.id, name: e.name, duration: e.duration, price: e.price }))
+});
+// „Gari mati + Maska, Fēnošana”
+const bookingDetail = b => [b.optionName, (b.extras || []).map(e => e.name).join(', ')].filter(Boolean).join(' + ');
+// nosaukums SMS ziņām: klientam — ar variantu; frizierei — arī ar ekstrām
+const serviceTitle = (b, full) => b.serviceName + (b.optionName ? ` (${b.optionName})` : '') + (full && (b.extras || []).length ? ' + ' + b.extras.map(e => e.name).join(', ') : '');
 const clean = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 const num = (v, min, max, def) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; };
 
@@ -75,7 +102,9 @@ function bookingView(b, forAdmin = false) {
   const svc = getService(b.serviceId);
   const v = {
     id: b.id, serviceId: b.serviceId, serviceName: b.serviceName, color: svc ? svc.color : '#6B7F5B',
-    date: b.date, start: b.start, end: b.end, price: b.price, status: b.status, note: b.note || '', createdAt: b.createdAt
+    date: b.date, start: b.start, end: b.end, price: b.price, priceMax: b.priceMax != null && b.priceMax > b.price ? b.priceMax : null,
+    optionName: b.optionName || '', extras: (b.extras || []).map(e => e.name), detail: bookingDetail(b),
+    status: b.status, note: b.note || '', createdAt: b.createdAt
   };
   v.canModify = b.status === 'booked' && U.ts(b.date, U.toMin(b.start)) - Date.now() >= db.settings.cancelHours * 3600e3;
   if (forAdmin) {
@@ -84,7 +113,8 @@ function bookingView(b, forAdmin = false) {
       userId: b.userId || null, guest: !u,
       clientName: u ? u.name : (b.guestName || 'Klients bez konta'),
       clientPhone: u ? u.phone : (b.guestPhone || ''),
-      adminNote: b.adminNote || '', cancelledBy: b.cancelledBy || null, createdBy: b.createdBy || null
+      adminNote: b.adminNote || '', cancelledBy: b.cancelledBy || null, createdBy: b.createdBy || null,
+      optionId: b.optionId || null, extraIds: (b.extras || []).map(e => e.id)
     });
   }
   return v;
@@ -93,10 +123,16 @@ function bookingView(b, forAdmin = false) {
 function publicInfo() {
   const s = db.settings;
   const services = db.services.filter(x => x.active).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-    .map(({ id, name, description, duration, price, color }) => ({ id, name, description, duration, price, color }));
+    .map(x => ({
+      id: x.id, name: x.name, description: x.description, duration: x.duration, price: x.price, color: x.color,
+      priceMax: x.priceMax != null && x.priceMax > x.price ? x.priceMax : null, optionsLabel: x.optionsLabel || '',
+      options: (x.options || []).map(({ id, name, duration, price }) => ({ id, name, duration, price })),
+      extras: (x.extras || []).map(({ id, name, duration, price }) => ({ id, name, duration, price }))
+    }));
   let nextFree = null;
   if (services.length) {
-    const minDur = Math.min(...services.map(x => x.duration));
+    // īsākais iespējamais pieraksts: pamata ilgums + īsākais variants (ja varianti ir)
+    const minDur = Math.min(...services.map(x => x.duration + (x.options.length ? Math.min(...x.options.map(o => o.duration)) : 0)));
     for (let i = 0; i <= Math.min(30, s.bookingDaysAhead) && !nextFree; i++) {
       const d = U.addDays(U.today(), i);
       const slots = computeSlots(d, minDur);
@@ -133,7 +169,7 @@ function smsVars(type, S, b, c, old, ascii) {
   const t = U.today(), d = U.parseDate(b.date), owner = SMS.isOwnerType(type);
   const day = smsWhen(b.date, b.start).replace(/ plkst\..*/, '');
   return {
-    salons: cut(S.salonName, 200), pakalpojums: cut(b.serviceName, 80), laiks: smsWhen(b.date, b.start),
+    salons: cut(S.salonName, 200), pakalpojums: cut(serviceTitle(b, owner), 80), laiks: smsWhen(b.date, b.start),
     kad: b.date === t ? 'šodien' : b.date === U.addDays(t, 1) ? 'rīt' : day,
     datums: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`, plkst: b.start,
     adrese: cut(S.address, 200), talrunis: cut(S.phone, 200), majaslapa: CANONICAL_HOST,
@@ -270,9 +306,10 @@ const validatePassword = p => { if (String(p || '').length < 6) fail(400, 'Parol
 
 /* ------------------------------------------------------------------ booking logic */
 
-function createBooking({ user, service, date, start, note, by, guestName, guestPhone, force, price, duration }) {
+function createBooking({ user, service, date, start, note, by, guestName, guestPhone, force, price, duration, sel }) {
   if (!U.isDate(date) || !U.isTime(start)) fail(400, 'Nederīgs datums vai laiks.');
-  const dur = duration || service.duration;
+  sel = sel || pickAddons(service, null, [], false);
+  const dur = duration || sel.duration;
   const s = U.toMin(start), e = s + dur;
   if (e > 24 * 60) fail(400, 'Vizīte nevar beigties pēc pusnakts.');
   if (by === 'guest') {
@@ -288,8 +325,9 @@ function createBooking({ user, service, date, start, note, by, guestName, guestP
   }
   const b = {
     id: U.uid('bkg'), userId: user ? user.id : null, guestName: user ? undefined : clean(guestName, 80), guestPhone: user ? undefined : clean(guestPhone, 40),
-    serviceId: service.id, serviceName: service.name, date, start, end: U.fromMin(e),
-    price: price ?? service.price, status: 'booked', note: clean(note), createdAt: new Date().toISOString(), createdBy: by
+    serviceId: service.id, serviceName: service.name, ...addonSnapshot(sel), date, start, end: U.fromMin(e),
+    price: price ?? sel.price, priceMax: price == null || price === sel.price ? sel.priceMax : null, // ja admins ieliek savu cenu — tā ir precīza
+    status: 'booked', note: clean(note), createdAt: new Date().toISOString(), createdBy: by
   };
   db.bookings.push(b);
   save();
@@ -440,6 +478,15 @@ route('POST', '/api/logout', null, ({ req, res }) => {
 
 // --- pieejamība (publiska — vajadzīga arī pieteikšanās bez konta)
 const canExclude = (user, b) => !!user && !!b && (user.role === 'admin' || b.userId === user.id);
+// Cik garam pierakstam meklēt brīvos laikus: izvēlētais variants/ekstras; pārceļot — paša pieraksta garums; adminam — arī brīvi ievadīts ilgums.
+function slotDuration(svc, query, user, excludeId) {
+  if (user && user.role === 'admin' && query.duration) return Math.round(num(query.duration, 5, 720, svc.duration));
+  if (query.optionId === undefined && query.extras === undefined && excludeId) {
+    const b = db.bookings.find(x => x.id === excludeId);
+    if (b) return Math.max(5, U.toMin(b.end) - U.toMin(b.start));
+  }
+  return pickAddons(svc, query.optionId, query.extras, false).duration;
+}
 route('GET', '/api/slots', null, ({ query, user }) => {
   const svc = getService(query.serviceId);
   if (!svc) fail(404, 'Pakalpojums nav atrasts.');
@@ -448,7 +495,7 @@ route('GET', '/api/slots', null, ({ query, user }) => {
     const b = db.bookings.find(x => x.id === query.exclude);
     if (canExclude(user, b)) exclude = b.id;
   }
-  return { date: query.date, slots: computeSlots(query.date, svc.duration, exclude) };
+  return { date: query.date, slots: computeSlots(query.date, slotDuration(svc, query, user, exclude), exclude) };
 });
 
 route('GET', '/api/days', null, ({ query, user }) => {
@@ -461,11 +508,12 @@ route('GET', '/api/days', null, ({ query, user }) => {
     if (canExclude(user, b)) exclude = b.id;
   }
   const [y, m] = query.month.split('-').map(Number);
+  const dur = slotDuration(svc, query, user, exclude);
   const days = {};
   const last = new Date(y, m, 0).getDate();
   for (let d = 1; d <= last; d++) {
     const ds = `${query.month}-${String(d).padStart(2, '0')}`;
-    days[ds] = computeSlots(ds, svc.duration, exclude).length;
+    days[ds] = computeSlots(ds, dur, exclude).length;
   }
   return { days, closures: db.closures.filter(c => c.date.startsWith(query.month)) };
 });
@@ -495,7 +543,8 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   if (digits(phone).length < 8 || digits(phone).length > 15) fail(400, 'Lūdzu ievadi derīgu tālruņa numuru.');
   if (!U.isDate(body.date) || !U.isTime(body.start)) fail(400, 'Lūdzu izvēlies datumu un laiku.');
 
-  if (!computeSlots(body.date, svc.duration).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
+  const sel = pickAddons(svc, body.optionId, body.extraIds, true);
+  if (!computeSlots(body.date, sel.duration).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
 
   // ierobežojumi pret surogātpieteikumiem
   if (isLimited('guest:' + ip, 3) || isLimited('guestday:' + ip, 6)) fail(429, `Pārāk daudz pieteikumu no šīs ierīces. Lūdzu zvani: ${S.phone}`);
@@ -506,7 +555,7 @@ route('POST', '/api/guest/bookings', null, ({ body, req }) => {
   const lastHour = db.bookings.filter(b => b.createdBy === 'guest' && now - Date.parse(b.createdAt) < 3600e3).length;
   if (lastHour >= 20) fail(429, `Tiešsaistes pieteikšanās īslaicīgi nav pieejama. Lūdzu zvani: ${S.phone}`);
 
-  const b = createBooking({ user: null, service: svc, date: body.date, start: body.start, note: body.note, by: 'guest', guestName: name, guestPhone: phone });
+  const b = createBooking({ user: null, service: svc, sel, date: body.date, start: body.start, note: body.note, by: 'guest', guestName: name, guestPhone: phone });
   const actor = sessionUser(req);
   notifyBooking('new', b, actor && actor.role === 'admin' ? 'admin' : 'guest');
   hit('guest:' + ip, 3, 3600e3);
@@ -566,7 +615,7 @@ route('GET', '/api/my/bookings', 'client', ({ user }) => ({
 route('POST', '/api/my/bookings', 'client', ({ user, body }) => {
   const svc = getService(body.serviceId);
   if (!svc || !svc.active) fail(404, 'Pakalpojums nav pieejams.');
-  const b = createBooking({ user, service: svc, date: body.date, start: body.start, note: body.note, by: 'client' });
+  const b = createBooking({ user, service: svc, sel: pickAddons(svc, body.optionId, body.extraIds, true), date: body.date, start: body.start, note: body.note, by: 'client' });
   notifyBooking('new', b, 'client');
   return { booking: bookingView(b) };
 });
@@ -576,11 +625,11 @@ route('PUT', '/api/my/bookings/:id', 'client', ({ user, body, params }) => {
   assertModifiable(b);
   if (body.date === b.date && body.start === b.start) return { booking: bookingView(b) }; // nekas nemainās
   if ((b.rescheduled || 0) >= 3) fail(409, `Šo pierakstu jau pārcēli vairākas reizes. Lūdzu zvani: ${db.settings.phone}`);
-  const svc = getService(b.serviceId);
-  const dur = U.toMin(b.end) - U.toMin(b.start);
-  if (!computeSlots(body.date, svc ? svc.duration : dur, b.id).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
+  const dur = U.toMin(b.end) - U.toMin(b.start); // pieraksta paša garums (ar izvēlēto variantu un ekstrām)
+  if (!U.isDate(body.date) || !U.isTime(body.start)) fail(400, 'Nederīgs datums vai laiks.');
+  if (!computeSlots(body.date, dur, b.id).includes(body.start)) fail(409, 'Šis laiks vairs nav pieejams. Lūdzu izvēlies citu.');
   const old = { date: b.date, start: b.start };
-  b.date = body.date; b.start = body.start; b.end = U.fromMin(U.toMin(body.start) + (svc ? svc.duration : dur));
+  b.date = body.date; b.start = body.start; b.end = U.fromMin(U.toMin(body.start) + dur);
   b.updatedAt = new Date().toISOString(); b.rescheduled = (b.rescheduled || 0) + 1;
   delete b.reminderSentAt; delete b.reminderSkipped; delete b.reminderTest;
   save();
@@ -633,7 +682,7 @@ route('GET', '/api/admin/bookings', 'admin', ({ query }) => {
   if (query.status && STATUSES.includes(query.status)) list = list.filter(b => b.status === query.status);
   if (query.userId) list = list.filter(b => b.userId === query.userId);
   let views = list.map(b => bookingView(b, true));
-  if (q) views = views.filter(v => (v.clientName + ' ' + v.clientPhone + ' ' + v.serviceName).toLowerCase().includes(q));
+  if (q) views = views.filter(v => (v.clientName + ' ' + v.clientPhone + ' ' + v.serviceName + ' ' + v.detail).toLowerCase().includes(q));
   views.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
   if (query.order === 'desc') views.reverse();
   return { bookings: views };
@@ -645,9 +694,10 @@ route('POST', '/api/admin/bookings', 'admin', ({ body }) => {
   let user = null;
   if (body.userId) { user = getUser(body.userId); if (!user) fail(404, 'Klients nav atrasts.'); }
   else if (clean(body.guestName).length < 2) fail(400, 'Izvēlies klientu vai ievadi klienta vārdu.');
-  const price = body.price === '' || body.price == null ? undefined : num(body.price, 0, 100000, svc.price);
-  const duration = body.duration ? num(body.duration, 5, 720, svc.duration) : undefined;
-  const b = createBooking({ user, service: svc, date: body.date, start: body.start, note: body.note, by: 'admin', guestName: body.guestName, guestPhone: body.guestPhone, force: !!body.force, price, duration });
+  const sel = pickAddons(svc, body.optionId, body.extraIds, false);
+  const price = body.price === '' || body.price == null ? undefined : money2(num(body.price, 0, 100000, sel.price));
+  const duration = body.duration ? Math.round(num(body.duration, 5, 720, sel.duration)) : undefined;
+  const b = createBooking({ user, service: svc, sel, date: body.date, start: body.start, note: body.note, by: 'admin', guestName: body.guestName, guestPhone: body.guestPhone, force: !!body.force, price, duration });
   if (body.adminNote) { b.adminNote = clean(body.adminNote); save(); }
   if (body.notify !== false) notifyBooking('new', b, 'admin');
   return { booking: bookingView(b, true) };
@@ -657,12 +707,18 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
   const b = db.bookings.find(x => x.id === params.id);
   if (!b) fail(404, 'Pieraksts nav atrasts.');
   const next = { ...b };
-  if (body.serviceId && body.serviceId !== b.serviceId) {
-    const svc = getService(body.serviceId);
-    if (!svc) fail(404, 'Pakalpojums nav atrasts.');
-    next.serviceId = svc.id; next.serviceName = svc.name;
-    if (body.price === undefined) next.price = svc.price;
-    if (!body.duration) body.duration = svc.duration;
+  const svcChanged = !!body.serviceId && body.serviceId !== b.serviceId;
+  let sel = null; // mainīts pakalpojums, variants vai ekstras → jauns nosaukumu/cenu momentuzņēmums
+  if (svcChanged || body.optionId !== undefined || body.extraIds !== undefined) {
+    const svc = getService(svcChanged ? body.serviceId : b.serviceId);
+    if (svcChanged && !svc) fail(404, 'Pakalpojums nav atrasts.');
+    if (svc) {
+      sel = pickAddons(svc, body.optionId !== undefined ? body.optionId : (svcChanged ? null : b.optionId),
+        body.extraIds !== undefined ? body.extraIds : (svcChanged ? [] : (b.extras || []).map(e => e.id)), false);
+      Object.assign(next, { serviceId: svc.id, serviceName: svcChanged ? svc.name : b.serviceName }, addonSnapshot(sel));
+      if (body.price === undefined || body.price === '') next.price = sel.price;
+      if (!body.duration) body.duration = sel.duration;
+    }
   }
   if (body.date !== undefined) { if (!U.isDate(body.date)) fail(400, 'Nederīgs datums.'); next.date = body.date; }
   if (body.start !== undefined) { if (!U.isTime(body.start)) fail(400, 'Nederīgs laiks.'); next.start = body.start; }
@@ -670,7 +726,10 @@ route('PUT', '/api/admin/bookings/:id', 'admin', ({ body, params }) => {
   next.end = U.fromMin(U.toMin(next.start) + dur);
   if (U.toMin(next.start) + dur > 24 * 60) fail(400, 'Vizīte nevar beigties pēc pusnakts.');
   if (body.status !== undefined) { if (!STATUSES.includes(body.status)) fail(400, 'Nederīgs statuss.'); next.status = body.status; if (body.status === 'cancelled' && b.status !== 'cancelled') next.cancelledBy = 'admin'; }
-  if (body.price !== undefined && body.price !== '') next.price = num(body.price, 0, 100000, b.price);
+  if (body.price !== undefined && body.price !== '') next.price = money2(num(body.price, 0, 100000, b.price));
+  // cena „no–līdz” paliek tikai tad, ja cena joprojām ir cenrāža „no”; admina ielikta cita cena ir precīza
+  if (sel) next.priceMax = next.price === sel.price ? sel.priceMax : null;
+  else if (next.price !== b.price) next.priceMax = null;
   if (body.note !== undefined) next.note = clean(body.note);
   if (body.adminNote !== undefined) next.adminNote = clean(body.adminNote);
   if (body.userId !== undefined) {
@@ -774,13 +833,41 @@ route('DELETE', '/api/admin/clients/:id', 'admin', ({ params }) => {
   return { ok: true };
 });
 
+// variantu / ekstru saraksts: nosaukums + papildu laiks (min) + papildu cena (€); esošo ierakstu id saglabājas
+function addonList(list, prev, kind, what) {
+  if (list === undefined) return Array.isArray(prev) ? prev : [];
+  if (!Array.isArray(list)) fail(400, `Nederīgs saraksts: ${what}.`);
+  if (list.length > 20) fail(400, `Ne vairāk kā 20 ieraksti: ${what}.`);
+  const old = new Set((Array.isArray(prev) ? prev : []).map(p => p.id)), seen = new Set();
+  return list.map(x => {
+    const o = x && typeof x === 'object' ? x : {};
+    const name = clean(o.name, 60);
+    if (!name) fail(400, `Katram ierakstam vajag nosaukumu (${what}).`);
+    if (seen.has(name.toLowerCase())) fail(400, `Nosaukums „${name}” atkārtojas (${what}).`);
+    seen.add(name.toLowerCase());
+    let id = typeof o.id === 'string' && old.has(o.id) ? o.id : U.uid(kind);
+    if (seen.has(id)) id = U.uid(kind);
+    seen.add(id);
+    return { id, name, duration: Math.round(num(o.duration === '' ? 0 : o.duration ?? 0, 0, 600, 0)), price: money2(num(o.price === '' ? 0 : o.price ?? 0, 0, 100000, 0)) };
+  });
+}
 function serviceInput(body, svc = {}) {
   const name = clean(body.name ?? svc.name, 80);
   if (name.length < 2) fail(400, 'Lūdzu ievadi pakalpojuma nosaukumu.');
+  const price = money2(num(body.price ?? svc.price, 0, 100000, 0));
+  // cena „līdz” nav obligāta; tukša = precīza cena
+  let priceMax = body.priceMax === undefined ? (svc.priceMax ?? null) : (body.priceMax === '' || body.priceMax === null ? null : money2(num(body.priceMax, 0, 100000, NaN)));
+  if (priceMax !== null && !(priceMax > price)) {
+    if (body.priceMax !== undefined && Number.isFinite(priceMax)) fail(400, 'Cenai „līdz” jābūt lielākai par cenu „no” (vai atstāj to tukšu).');
+    priceMax = null;
+  }
   return {
     name, description: clean(body.description ?? svc.description, 300),
-    duration: num(body.duration ?? svc.duration, 5, 720, 60),
-    price: num(body.price ?? svc.price, 0, 100000, 0),
+    duration: Math.round(num(body.duration ?? svc.duration, 5, 720, 60)),
+    price, priceMax,
+    optionsLabel: clean(body.optionsLabel ?? svc.optionsLabel, 40),
+    options: addonList(body.options, svc.options, 'opt', 'varianti'),
+    extras: addonList(body.extras, svc.extras, 'ext', 'ekstras'),
     active: body.active === undefined ? svc.active !== false : !!body.active,
     color: /^#[0-9a-fA-F]{6}$/.test(body.color || '') ? body.color : (svc.color || store.SERVICE_COLORS[db.services.length % store.SERVICE_COLORS.length]),
     order: num(body.order ?? svc.order, 0, 999, db.services.length)
@@ -960,7 +1047,7 @@ route('GET', '/api/admin/export/bookings.csv', 'admin', ({ res }) => {
   const rows = [['Datums', 'Sākums', 'Beigas', 'Klients', 'Tālrunis', 'Pakalpojums', 'Cena EUR', 'Statuss', 'Piezīme']];
   const label = { booked: 'Pierakstīts', completed: 'Notika', cancelled: 'Atcelts', noshow: 'Neieradās' };
   for (const v of db.bookings.map(b => bookingView(b, true)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)))
-    rows.push([v.date, v.start, v.end, v.clientName, v.clientPhone, v.serviceName, String(v.price).replace('.', ','), label[v.status], v.note]);
+    rows.push([v.date, v.start, v.end, v.clientName, v.clientPhone, v.serviceName + (v.detail ? ` (${v.detail})` : ''), String(v.price).replace('.', ','), label[v.status], v.note]);
   // aizsardzība pret formulu ievietošanu izklājlapā (=, +, -, @ šūnas sākumā); tālruņa numuri paliek neskarti
   const safe = v => { const t = String(v ?? ''); return /^[=+\-@\t\r]/.test(t) && !/^\+?[\d\s()-]+$/.test(t) ? "'" + t : t; };
   const csv = '\ufeff' + rows.map(r => r.map(c => `"${safe(c).replace(/"/g, '""')}"`).join(';')).join('\r\n');

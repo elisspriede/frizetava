@@ -2,14 +2,15 @@
    Rāda tikai dienas un laikus, kuros izvēlētais pakalpojums tiešām ir brīvs. */
 'use strict';
 
-function createDateTimePicker(root, { service, daysAhead = 60, excludeId = null, month, date = null, start = null, onChange = () => {}, announce = () => {} }) {
+function createDateTimePicker(root, { service, query = {}, daysAhead = 60, excludeId = null, month, date = null, start = null, onChange = () => {}, announce = () => {} }) {
   const st = { month: month || (date || todayStr()).slice(0, 7), date, start, days: {} };
   if (st.month < todayStr().slice(0, 7)) st.month = todayStr().slice(0, 7);
   root.innerHTML = `<div class="picker">
     <div class="cal" data-cal><div class="skeleton" style="height:300px"></div></div>
     <div data-slots></div></div>`;
   const calEl = $('[data-cal]', root), slotsEl = $('[data-slots]', root);
-  const q = extra => { const p = new URLSearchParams({ serviceId: service.id, ...extra }); if (excludeId) p.set('exclude', excludeId); return p; };
+  // query — izvēlētais variants un ekstras (no tiem atkarīgs ilgums, tātad arī brīvie laiki)
+  const q = extra => { const p = new URLSearchParams({ serviceId: service.id, ...query, ...extra }); if (excludeId) p.set('exclude', excludeId); return p; };
   const alive = () => root.isConnected;
   // nepaziņo izmaiņas, ja lietotājs jau aizgājis no šī soļa (citādi novecojusi atbilde varētu notīrīt izvēli)
   const emit = () => { if (alive()) onChange({ date: st.date, start: st.start, month: st.month }); };
@@ -110,4 +111,29 @@ function createDateTimePicker(root, { service, daysAhead = 60, excludeId = null,
   })();
 
   return { get value() { return { date: st.date, start: st.start, month: st.month }; } };
+}
+
+/* Variantu (viens obligāts) un ekstru (pēc izvēles) izvēlne izvēlētajam pakalpojumam.
+   sel = { optionId, extraIds } tiek mainīts uz vietas; onChange(sel) — pēc katras izmaiņas. */
+function renderAddonChooser(root, svc, sel, onChange = () => {}) {
+  const opts = svc.options || [], exs = svc.extras || [];
+  const optRow = o => { const c = svcCalc(svc, { optionId: o.id });
+    return `<label class="addon"><input type="radio" name="addonOpt" value="${esc(o.id)}" ${sel.optionId === o.id ? 'checked' : ''}>
+      <span class="nm">${esc(o.name)}</span><span class="ad">${fmt.dur(c.duration)} · ${fmt.price(c.price, c.priceMax)}</span></label>`; };
+  const exRow = e => `<label class="addon"><input type="checkbox" value="${esc(e.id)}" ${(sel.extraIds || []).includes(e.id) ? 'checked' : ''}>
+      <span class="nm">${esc(e.name)}</span><span class="ad">${esc(addonPlus(e) || 'bez piemaksas')}</span></label>`;
+  root.innerHTML = `<div class="addons">
+      <div class="addons-head"><b>${esc(svc.name)}</b>${svc.description ? `<span class="muted small">${esc(svc.description)}</span>` : ''}</div>
+      ${opts.length ? `<fieldset class="addon-group" data-opts><legend>${esc(svc.optionsLabel || 'Izvēlies variantu')} <span class="req">jāizvēlas</span></legend>${opts.map(optRow).join('')}</fieldset>` : ''}
+      ${exs.length ? `<fieldset class="addon-group" data-exs><legend>Papildus <span class="opt">pēc izvēles</span></legend>${exs.map(exRow).join('')}</fieldset>` : ''}
+      <div class="addons-total" aria-live="polite"><span>Kopā</span><b data-total></b></div></div>`;
+  const total = () => { const c = svcCalc(svc, sel);
+    $('[data-total]', root).textContent = c.needsOption ? `${svc.optionsLabel || 'Variants'}: vēl nav izvēlēts` : `${fmt.dur(c.duration)} · ${fmt.price(c.price, c.priceMax)}`; };
+  root.addEventListener('change', e => {
+    if (e.target.name === 'addonOpt') sel.optionId = e.target.value;
+    else if (e.target.type === 'checkbox') sel.extraIds = $$('[data-exs] input:checked', root).map(i => i.value);
+    else return;
+    total(); onChange(sel);
+  });
+  total();
 }
