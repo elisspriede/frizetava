@@ -75,7 +75,7 @@
     const h = new Date().getHours();
     const greet = h < 12 ? 'Labrīt' : h < 18 ? 'Labdien' : 'Labvakar';
     view.innerHTML = pageHead(fmt.dateLong(todayStr()), `${greet}, <span class="serif" style="color:var(--accent)">${esc((me.name || '').split(' ')[0] || 'admin')}</span>`,
-      `<button class="btn btn-accent" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
+      `<button class="btn btn-accent home-new" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
       `<div id="homeNotices"></div>
        <section class="glass card today-card" id="todayCard" aria-live="polite"><div class="card-head"><div><h3>Šodien</h3></div></div><div class="skeleton" style="height:76px"></div></section>
        <div id="calHost"></div>`;
@@ -88,15 +88,16 @@
   async function loadToday() {
     const seq = ++todaySeq;
     let s;
-    try { s = await API.get('/api/admin/stats?range=7'); } catch (e) { return toast(e.message, 'error'); }
+    try { s = await API.get('/api/admin/stats?range=7'); await ensureSchedule(); } catch (e) { return toast(e.message, 'error'); }
     if (seq !== todaySeq || !onSec('parskats') || !$('#todayCard')) return;
+    const off = schedule.closures.find(c => c.date === todayStr());
     const notices = [];
     if (me.mustChangePassword) notices.push(`<div class="notice">${icon('key')}<span>Tu izmanto noklusējuma administratora paroli. Lūdzu, nomaini to drošības nolūkos.</span><a class="btn btn-sm" href="#iestatijumi">Mainīt</a></div>`);
     if (s.kpi.unmarked) notices.push(`<div class="notice">${icon('alert')}<span><b>${s.kpi.unmarked}</b> pagājušas vizītes vēl nav atzīmētas kā notikušas.</span><button class="btn btn-sm" id="markPast">Atzīmēt kā notikušas</button></div>`);
     $('#homeNotices').innerHTML = notices.join('');
     const now = new Date().getHours() * 60 + new Date().getMinutes();
     $('#todayCard').innerHTML = `
-      <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${s.today.length} ${s.today.length % 10 === 1 && s.today.length % 100 !== 11 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div></div>
+      <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${s.today.length} ${s.today.length % 10 === 1 && s.today.length % 100 !== 11 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div>${off ? `<span class="chip dayoff-chip">${icon('ban')}${esc(off.reason || 'Brīvdiena')}</span>` : ''}</div>
       <div class="agenda">${s.today.length ? s.today.map(b => `
         <div class="agenda-item ${toMin(b.end) < now ? 'past' : ''}" data-bk="${b.id}" role="button" tabindex="0">
           <div class="t">${b.start}<small>${b.end}</small></div><i class="bar" style="background:${esc(b.color)}"></i>
@@ -217,6 +218,44 @@
   const calNarrow = () => matchMedia('(max-width: 960px)').matches;
   const plPier = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'pieraksts' : 'pieraksti'}`;
 
+  /* brīvdiena: izvēlētā diena, kurā meistare nebūs darbā (klienti tajā nevar pieteikties) */
+  const dayOffHTML = (d, hours, closures) => {
+    const cl = closures.get(d), h = hours[parseD(d).getDay()];
+    if (cl) return `<div class="dayoff on">${icon('ban')}<span><b>${esc(cl.reason || 'Brīvdiena')}</b> — klienti šajā dienā nevar pieteikties.</span><button type="button" class="btn btn-sm btn-line" data-dayoff="del">Atcelt brīvdienu</button></div>`;
+    if (d < todayStr()) return '';
+    if (!h || !h.open) return `<div class="dayoff">${icon('ban')}<span class="muted small">Pēc darba grafika šajā nedēļas dienā salons nestrādā.</span></div>`;
+    return `<div class="dayoff"><button type="button" class="btn btn-sm btn-line" data-dayoff="add">${icon('ban')}Atzīmēt kā brīvdienu</button><span class="muted small">Meistare šajā dienā nebūs darbā — klienti nevarēs pieteikties.</span></div>`;
+  };
+  const bindDayOff = (root, d, closures, bk) => {
+    const btn = root && $('[data-dayoff]', root);
+    if (!btn) return;
+    btn.addEventListener('click', () => withBusy(btn, async () => {
+      try {
+        if (btn.dataset.dayoff === 'del') {
+          await API.del(`/api/admin/closures/${closures.get(d).id}`);
+          toast('Brīvdiena atcelta — klienti atkal var pieteikties.');
+        } else {
+          const n = bk.filter(b => b.date === d && b.status === 'booked').length;
+          if (n && !(await confirmDialog(`Šajā dienā jau ir ${plPier(n)}. Tie netiks atcelti automātiski — sazinies ar klientiem vai pārcel pierakstus.`, { title: 'Atzīmēt kā brīvdienu?', ok: 'Atzīmēt' }))) return;
+          await API.post('/api/admin/closures', { from: d, reason: 'Brīvdiena' });
+          toast(`${cap(fmt.dateLong(d))} atzīmēta kā brīvdiena.`);
+        }
+      } catch (x) { toast(x.message, 'error'); }
+      try { await ensureSchedule(true); } catch { /* paliek iepriekšējais grafiks */ }
+      if (onSec('parskats')) { renderCalendar(); if (d === todayStr()) loadToday(); }
+    }));
+  };
+  // josla zem kalendāra: telefonā „Pieraksts” (augšējās pogas tur nav), dienas skatā — brīvdienas poga
+  function drawCalActions(hours, closures, bk) {
+    const box = $('#calActions');
+    if (!box) return;
+    const d = cal.anchor, day = cal.view === 'day';
+    box.innerHTML = cal.view === 'month' ? '' // mēneša skatā pogas ir izvēlētās dienas sarakstā
+      : `<button type="button" class="btn btn-sm btn-accent only-narrow" id="calNew">${icon('plus')}Pieraksts</button>` + (day ? dayOffHTML(d, hours, closures) : '');
+    if ($('#calNew')) $('#calNew').addEventListener('click', () => bookingCreateModal({ date: day ? d : undefined }));
+    if (day) bindDayOff(box, d, closures, bk);
+  }
+
   async function renderCalendar() {
     const seq = ++calSeq;
     const days = cal.view === 'month' ? monthDays(cal.anchor) : cal.view === 'week' ? [...Array(7)].map((_, i) => addDays(weekStart(cal.anchor), i)) : [cal.anchor];
@@ -233,6 +272,7 @@
           <input type="date" class="input" id="jump" aria-label="Pāriet uz datumu">
           <div class="seg"><button data-v="day">Diena</button><button data-v="week">Nedēļa</button><button data-v="month">Mēnesis</button></div></div>
         <div class="glass week" id="calWrap"><div class="week-scroll" id="calBody"><div class="skeleton" style="height:500px;margin:20px"></div></div></div>
+        <div class="cal-actions" id="calActions"></div>
         <p class="muted small" style="margin-top:10px" id="calHint"></p>`;
       $('#prev').addEventListener('click', () => calStep(-1));
       $('#next').addEventListener('click', () => calStep(1));
@@ -254,6 +294,7 @@
     } catch (e) { return toast(e.message, 'error'); }
     if (seq !== calSeq || !$('#calBody') || !onSec('parskats')) return; // pa to laiku izvēlēts cits datums/skats vai atvērta cita sadaļa
     const hours = schedule.hours, closures = new Map(schedule.closures.map(c => [c.date, c]));
+    drawCalActions(hours, closures, bk);
     if (cal.view === 'month') return renderMonth(days, bk, hours, closures);
     let minS = 24 * 60, maxE = 0;
     Object.values(hours).forEach(h => { if (h.open) { minS = Math.min(minS, toMin(h.start)); maxE = Math.max(maxE, toMin(h.end)); } });
@@ -345,11 +386,11 @@
     const sel = cal.anchor, selList = byDay.get(sel) || [];
     html += `<div class="month-day"><div class="card-head"><h3>${esc(cap(fmt.dateLong(sel)))}</h3>
         <div style="display:flex;gap:8px"><button class="btn btn-sm btn-ghost" id="mOpenDay">Dienas skats</button><button class="btn btn-sm btn-accent" id="mNew">${icon('plus')}Pieraksts</button></div></div>
-      ${closures.has(sel) ? `<p class="muted small">${esc(closures.get(sel).reason || 'Slēgts')}</p>` : ''}
       ${selList.length ? selList.map(b => `<button type="button" class="mrow ${b.status}" data-bk="${b.id}"><i class="dot" style="background:${esc(b.color)}"></i>
           <span class="tm">${b.start}–${b.end}</span><span class="who"><b>${esc(b.clientName)}</b><small>${svcLine(b)}</small></span>
           ${b.status !== 'booked' ? `<span class="badge ${b.status}">${LV.status[b.status]}</span>` : ''}</button>`).join('')
-        : '<p class="muted small">Šajā dienā pierakstu nav.</p>'}</div>`;
+        : '<p class="muted small">Šajā dienā pierakstu nav.</p>'}
+      ${dayOffHTML(sel, hours, closures)}</div>`;
     $('#calBody').innerHTML = html;
     $('#calBody').scrollLeft = 0;
 
@@ -369,6 +410,7 @@
     });
     $('#mOpenDay').addEventListener('click', toDay);
     $('#mNew').addEventListener('click', () => bookingCreateModal({ date: sel }));
+    bindDayOff($('#calBody .month-day'), sel, closures, bk);
   }
 
   /* ----------------------------------------------------------- PIERAKSTU SARAKSTS */

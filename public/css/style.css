@@ -921,3 +921,23 @@ body.lb-open .wa-fab { display: none; }
 .today-card .agenda-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #calHost { scroll-margin-top: 16px; }
 @media (max-width: 720px) { .today-card { margin-bottom: 18px; } .today-card .agenda { grid-template-columns: 1fr; } }
+
+/* Kalendāra darbības zem kalendāra: pieraksts (telefonā) un brīvdienas poga */
+.only-narrow { display: none; }
+.cal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; }
+.cal-actions > * { margin-top: 12px; }
+.dayoff { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; flex: 1 1 260px; min-width: 0; font-size: 13.5px; }
+.dayoff > svg { width: 18px; height: 18px; flex: none; color: var(--muted); }
+.dayoff > span { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.dayoff .btn svg { width: 15px; height: 15px; }
+.dayoff.on { padding: 10px 14px; border-radius: 16px; background: rgba(198, 111, 84, .1); border: 1px solid rgba(198, 111, 84, .28); }
+.dayoff.on > svg { color: var(--accent); }
+.month-day .dayoff { margin-top: 14px; }
+.month-day .dayoff:not(.on) { padding-top: 12px; border-top: 1px dashed var(--line-2); }
+.dayoff-chip { gap: 6px; }
+.dayoff-chip svg { width: 14px; height: 14px; }
+@media (max-width: 960px) {
+  .home-new { display: none; }
+  .only-narrow { display: inline-flex; }
+  .dayoff .btn { flex: none; }
+}

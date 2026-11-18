@@ -43,7 +43,7 @@ Pēc pieslēgšanās sistēma pati novirza: administrators → `/admin`, klients
 
 ## Administratora panelis
 
-- **Sākums** — šodienas pieraksti un zem tiem kalendārs (diena / nedēļa / mēnesis).
+- **Sākums** — šodienas pieraksti un zem tiem kalendārs (diena / nedēļa / mēnesis). Zem kalendāra izvēlēto dienu var atzīmēt kā brīvdienu (meistare nav darbā — klienti tajā dienā nevar pieteikties) vai brīvdienu atcelt.
 - **Statistika** — ieņēmumi, vizītes, jauni klienti, noslodze; ieņēmumu līkne, populārākie pakalpojumi, noslogotākās dienas un stundas, lojālākie klienti.
   Kalendārā: klikšķis uz brīva laika izveido pierakstu, klikšķis uz pieraksta — rediģē (statuss, laiks, pakalpojums, cena, piezīmes).
 - **Pieraksti** — saraksts ar filtriem un CSV eksportu (atveras Excel).
