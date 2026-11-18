@@ -140,7 +140,14 @@ function openModal({ title, subtitle = '', body = '', foot = '', wide = false, o
   const close = () => {
     wrap.classList.add('out');
     document.removeEventListener('keydown', onKey);
-    setTimeout(() => { wrap.remove(); if (prevFocus && prevFocus.focus) prevFocus.focus(); }, 180);
+    setTimeout(() => {
+      wrap.remove();
+      // fokuss atgriežas tikai uz elementu, kas ir redzams ekrānā — citādi pārlūks aizritinātu lapu uz iepriekš lietoto lauku
+      if (!prevFocus || !prevFocus.focus || !document.contains(prevFocus)) return;
+      const r = prevFocus.getBoundingClientRect();
+      if (r.bottom > 0 && r.top < innerHeight && (r.width || r.height)) prevFocus.focus({ preventScroll: true });
+      else if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    }, 180);
   };
   const onKey = e => { if (e.key === 'Escape') close(); };
   wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });

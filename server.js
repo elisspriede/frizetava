@@ -165,7 +165,7 @@ function publicInfo() {
       bookingDaysAhead: s.bookingDaysAhead, maxActiveBookings: s.maxActiveBookings
     },
     hours: db.hours, services, nextFree,
-    closures: db.closures.filter(c => c.date >= U.today()).map(({ date, reason }) => ({ date, reason }))
+    closures: db.closures.filter(c => c.date >= U.today()).sort((a, b) => a.date.localeCompare(b.date)).map(({ date, reason }) => ({ date, reason }))
   };
 }
 

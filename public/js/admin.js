@@ -15,6 +15,7 @@
   let me, settings, services = [], clients = null, schedule = null;
   let dashRange = 30, dashMetric = 'revenue';
   const cal = { view: innerWidth < 720 ? 'day' : 'week', anchor: todayStr() };
+  let homeDay = todayStr(); // diena, kurā sākums pēdējoreiz uzzīmēts
   const list = { from: addDays(todayStr(), -30), to: addDays(todayStr(), 30), status: '', q: '' };
 
   /* ----------------------------------------------------------- start */
@@ -50,7 +51,17 @@
   const svcById = id => services.find(s => s.id === id);
   const svcColor = id => (svcById(id) || {}).color || '#6B7F5B';
   async function ensureClients(force) { if (!clients || force) clients = (await API.get('/api/admin/clients')).clients; return clients; }
-  async function ensureSchedule(force) { if (!schedule || force) schedule = await API.get('/api/admin/schedule'); return schedule; }
+  let schedSeq = 0, schedP = null;
+  function fetchSchedule() {
+    const q = ++schedSeq;
+    const p = API.get('/api/admin/schedule').then(x => { if (q === schedSeq) schedule = x; }).finally(() => { if (schedP === p) schedP = null; });
+    return (schedP = p);
+  }
+  async function ensureSchedule(force) {
+    if (force) await fetchSchedule();
+    while (!schedule) await (schedP || fetchSchedule());
+    return schedule;
+  }
 
   // vecā saite #kalendars ved uz sākumu — kalendārs tagad ir tur
   const SEC_ALIAS = { kalendars: 'parskats' };
@@ -64,6 +75,8 @@
     ({ parskats: renderHome, statistika: renderStats, pieraksti: renderList, klienti: renderClients, pakalpojumi: renderServices, galerija: renderGallery, 'darba-laiks': renderHours, iestatijumi: renderSettings })[found]();
   }
   addEventListener('hashchange', route);
+  // atgriežoties cilnē citā dienā, sākums tiek uzzīmēts no jauna (šodienas kartīte un datums)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && todayStr() !== homeDay && onSec('parskats') && !$('.modal-wrap')) renderHome(); });
 
   const pageHead = (eyebrow, title, tools = '') =>
     `<div class="page-head"><div><span class="eyebrow">${eyebrow}</span><h1 style="margin-top:6px">${title}</h1></div><div class="tools">${tools}</div></div>`;
@@ -72,6 +85,7 @@
 
   /* ----------------------------------------------------------- SĀKUMS: šodienas pieraksti + kalendārs */
   function renderHome() {
+    if (todayStr() !== homeDay) { if (cal.anchor === homeDay) cal.anchor = todayStr(); homeDay = todayStr(); }
     const h = new Date().getHours();
     const greet = h < 12 ? 'Labrīt' : h < 18 ? 'Labdien' : 'Labvakar';
     view.innerHTML = pageHead(fmt.dateLong(todayStr()), `${greet}, <span class="serif" style="color:var(--accent)">${esc((me.name || '').split(' ')[0] || 'admin')}</span>`,
@@ -79,8 +93,16 @@
       `<div id="homeNotices"></div>
        <section class="glass card today-card" id="todayCard" aria-live="polite"><div class="card-head"><div><h3>Šodien</h3></div></div><div class="skeleton" style="height:76px"></div></section>
        <div id="calHost"></div>`;
-    $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' || (cal.view === 'month' && calNarrow()) ? cal.anchor : undefined }));
-    loadToday();
+    // augšējā poga: kalendārā rādītā diena tikai tad, ja kalendārs ir redzams ekrānā; citādi — šodiena
+    $('#newBk').addEventListener('click', () => {
+      const r = $('#calTitle') && $('#calTitle').getBoundingClientRect();
+      bookingCreateModal({ date: r && r.top >= 0 && r.bottom <= innerHeight ? calNewDate() : undefined });
+    });
+    schedule = null;
+    // kalendārs kļūst lietojams, kad kartītei virs tā ir galīgais augstums — citādi tas palec zem pirksta
+    const host = $('#calHost');
+    host.style.visibility = 'hidden'; host.inert = true;
+    loadToday().finally(() => { host.style.visibility = ''; host.inert = false; });
     return renderCalendar();
   }
   // šodienas vizītes un atgādinājumi (parole, neatzīmētas vizītes)
@@ -88,24 +110,40 @@
   async function loadToday() {
     const seq = ++todaySeq;
     let s;
-    try { s = await API.get('/api/admin/stats?range=7'); await ensureSchedule(); } catch (e) { return toast(e.message, 'error'); }
+    if ($('#todayCard')) $('#todayCard').classList.add('busy'); // kamēr pārlādējas, vecie ieraksti nav spiežami
+    try { s = await API.get('/api/admin/stats?range=7'); await ensureSchedule(); }
+    catch (e) {
+      const card = seq === todaySeq && onSec('parskats') && $('#todayCard');
+      if (card) {
+        card.classList.remove('busy');
+        if (!$('.agenda', card)) { // pirmā ielāde neizdevās — nevis mūžīgs „lādējas”, bet iespēja mēģināt vēlreiz
+          card.innerHTML = `<div class="card-head"><div><h3>Šodien</h3></div></div><div class="empty">${icon('alert')}<p>Neizdevās ielādēt šodienas pierakstus.</p><button type="button" class="btn btn-sm btn-line" id="todayRetry">Mēģināt vēlreiz</button></div>`;
+          $('#todayRetry').addEventListener('click', e => withBusy(e.currentTarget, loadToday));
+        }
+      }
+      return toast(e.message, 'error');
+    }
     if (seq !== todaySeq || !onSec('parskats') || !$('#todayCard')) return;
     const off = schedule.closures.find(c => c.date === todayStr());
+    const cnt = s.today.filter(b => b.status !== 'noshow').length; // tāpat kā kalendārā: neierašanās netiek skaitīta
+    const act = document.activeElement, focusId = act && $('#todayCard').contains(act) ? act.dataset.bk : null;
     const notices = [];
     if (me.mustChangePassword) notices.push(`<div class="notice">${icon('key')}<span>Tu izmanto noklusējuma administratora paroli. Lūdzu, nomaini to drošības nolūkos.</span><a class="btn btn-sm" href="#iestatijumi">Mainīt</a></div>`);
     if (s.kpi.unmarked) notices.push(`<div class="notice">${icon('alert')}<span><b>${s.kpi.unmarked}</b> pagājušas vizītes vēl nav atzīmētas kā notikušas.</span><button class="btn btn-sm" id="markPast">Atzīmēt kā notikušas</button></div>`);
     $('#homeNotices').innerHTML = notices.join('');
     const now = new Date().getHours() * 60 + new Date().getMinutes();
     $('#todayCard').innerHTML = `
-      <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${s.today.length} ${s.today.length % 10 === 1 && s.today.length % 100 !== 11 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div>${off ? `<span class="chip dayoff-chip">${icon('ban')}${esc(off.reason || 'Brīvdiena')}</span>` : ''}</div>
+      <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${cnt} ${cnt % 10 === 1 && cnt % 100 !== 11 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div>${off ? `<span class="chip dayoff-chip" title="${esc(off.reason || 'Brīvdiena')}">${icon('ban')}<span>${esc(off.reason || 'Brīvdiena')}</span></span>` : ''}</div>
       <div class="agenda">${s.today.length ? s.today.map(b => `
         <div class="agenda-item ${toMin(b.end) < now ? 'past' : ''}" data-bk="${b.id}" role="button" tabindex="0">
           <div class="t">${b.start}<small>${b.end}</small></div><i class="bar" style="background:${esc(b.color)}"></i>
           <div style="min-width:0"><b>${esc(b.clientName)}</b><span>${svcLine(b)}</span></div>
           <span class="badge ${b.status}">${LV.status[b.status]}</span></div>`).join('')
         : `<div class="empty">${icon('leaf')}<p>Šodien vizīšu nav.<br>Laiks atpūtai!</p></div>`}</div>`;
+    $('#todayCard').classList.remove('busy');
+    if (focusId && !$('.modal-wrap')) { const el = $$('#todayCard [data-bk]').find(x => x.dataset.bk === focusId); if (el) el.focus({ preventScroll: true }); }
     $$('#todayCard [data-bk]').forEach(el => {
-      const open = () => bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk));
+      const open = () => { if (seq === todaySeq) bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk)); };
       el.addEventListener('click', open);
       el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     });
@@ -226,25 +264,39 @@
     if (!h || !h.open) return `<div class="dayoff">${icon('ban')}<span class="muted small">Pēc darba grafika šajā nedēļas dienā salons nestrādā.</span></div>`;
     return `<div class="dayoff"><button type="button" class="btn btn-sm btn-line" data-dayoff="add">${icon('ban')}Atzīmēt kā brīvdienu</button><span class="muted small">Meistare šajā dienā nebūs darbā — klienti nevarēs pieteikties.</span></div>`;
   };
-  const bindDayOff = (root, d, closures, bk) => {
+  const bindDayOff = (root, d, hours, bk) => {
     const btn = root && $('[data-dayoff]', root);
     if (!btn) return;
-    btn.addEventListener('click', () => withBusy(btn, async () => {
-      try {
-        if (btn.dataset.dayoff === 'del') {
-          await API.del(`/api/admin/closures/${closures.get(d).id}`);
-          toast('Brīvdiena atcelta — klienti atkal var pieteikties.');
-        } else {
-          const n = bk.filter(b => b.date === d && b.status === 'booked').length;
-          if (n && !(await confirmDialog(`Šajā dienā jau ir ${plPier(n)}. Tie netiks atcelti automātiski — sazinies ar klientiem vai pārcel pierakstus.`, { title: 'Atzīmēt kā brīvdienu?', ok: 'Atzīmēt' }))) return;
-          await API.post('/api/admin/closures', { from: d, reason: 'Brīvdiena' });
-          toast(`${cap(fmt.dateLong(d))} atzīmēta kā brīvdiena.`);
-        }
-      } catch (x) { toast(x.message, 'error'); }
-      try { await ensureSchedule(true); } catch { /* paliek iepriekšējais grafiks */ }
-      if (onSec('parskats')) { renderCalendar(); if (d === todayStr()) loadToday(); }
-    }));
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      if (d !== cal.anchor) return renderCalendar(); // pa to laiku izvēlēta cita diena, bet tā vēl nav ielādēta — poga neattiecas uz redzamo datumu
+      const add = btn.dataset.dayoff === 'add', name = cap(fmt.dateLong(d));
+      const n = bk.filter(b => b.date === d && b.status === 'booked').length;
+      if (add && n && !(await confirmDialog(`<b>${esc(name)}.</b> Šajā dienā jau ir ${plPier(n)}. Tie netiks atcelti automātiski — sazinies ar klientiem vai pārcel pierakstus.`, { title: 'Atzīmēt kā brīvdienu?', ok: 'Atzīmēt' }))) return;
+      btn.style.minWidth = btn.offsetWidth + 'px'; // poga nesaraujas, kamēr griežas ielādes aplītis — lapa nelec
+      await withBusy(btn, async () => {
+        try {
+          const now = (await ensureSchedule(true)).closures.find(c => c.date === d); // aktuālais stāvoklis (varēja mainīties citā ierīcē)
+          if (add) {
+            const r = now ? { affected: 0 } : await API.post('/api/admin/closures', { from: d, reason: 'Brīvdiena' });
+            toast(`${name} atzīmēta kā brīvdiena.`);
+            if (r.affected > n) toast(`Uzmanību: šajā dienā ir ${plPier(r.affected)} — sazinies ar klientiem.`, 'error');
+          } else {
+            if (now) await API.del(`/api/admin/closures/${now.id}`);
+            const h = hours[parseD(d).getDay()];
+            toast(h && h.open ? 'Brīvdiena atcelta — klienti atkal var pieteikties.' : 'Brīvdiena atcelta. Pēc darba grafika šajā nedēļas dienā salons tāpat nestrādā.');
+          }
+        } catch (x) { toast(x.message, 'error'); }
+        try { await ensureSchedule(true); } catch { schedule = null; /* nākamajā reizē ielādēs no jauna */ }
+        if (!onSec('parskats')) return;
+        if (d === todayStr()) loadToday();
+        await renderCalendar(); // poga paliek neaktīva, līdz tās vietā ir jaunais stāvoklis
+      });
+    });
   };
+  // datums jaunam pierakstam: rādītā diena; nedēļas skatā — šodiena, ja tā ir rādītajā nedēļā
+  const calNewDate = () => cal.view === 'day' || (cal.view === 'month' && calNarrow()) ? cal.anchor
+    : cal.view === 'week' && weekStart(cal.anchor) !== weekStart(todayStr()) ? cal.anchor : undefined;
   // josla zem kalendāra: telefonā „Pieraksts” (augšējās pogas tur nav), dienas skatā — brīvdienas poga
   function drawCalActions(hours, closures, bk) {
     const box = $('#calActions');
@@ -252,8 +304,8 @@
     const d = cal.anchor, day = cal.view === 'day';
     box.innerHTML = cal.view === 'month' ? '' // mēneša skatā pogas ir izvēlētās dienas sarakstā
       : `<button type="button" class="btn btn-sm btn-accent only-narrow" id="calNew">${icon('plus')}Pieraksts</button>` + (day ? dayOffHTML(d, hours, closures) : '');
-    if ($('#calNew')) $('#calNew').addEventListener('click', () => bookingCreateModal({ date: day ? d : undefined }));
-    if (day) bindDayOff(box, d, closures, bk);
+    if ($('#calNew')) $('#calNew').addEventListener('click', () => bookingCreateModal({ date: calNewDate() }));
+    if (day) bindDayOff(box, d, hours, bk);
   }
 
   async function renderCalendar() {
@@ -288,6 +340,7 @@
     $$('.week-toolbar .seg button').forEach(b => b.classList.toggle('on', b.dataset.v === cal.view));
 
     let bk;
+    $$('#calHost [data-dayoff]').forEach(x => { x.disabled = true; });
     try {
       await ensureSchedule();
       bk = (await API.get(`/api/admin/bookings?from=${from}&to=${to}`)).bookings.filter(b => b.status !== 'cancelled');
@@ -386,6 +439,7 @@
     const sel = cal.anchor, selList = byDay.get(sel) || [];
     html += `<div class="month-day"><div class="card-head"><h3>${esc(cap(fmt.dateLong(sel)))}</h3>
         <div style="display:flex;gap:8px"><button class="btn btn-sm btn-ghost" id="mOpenDay">Dienas skats</button><button class="btn btn-sm btn-accent" id="mNew">${icon('plus')}Pieraksts</button></div></div>
+      ${closures.has(sel) ? `<p class="dayoff-top">${icon('ban')}<span>${esc(closures.get(sel).reason || 'Brīvdiena')}</span></p>` : ''}
       ${selList.length ? selList.map(b => `<button type="button" class="mrow ${b.status}" data-bk="${b.id}"><i class="dot" style="background:${esc(b.color)}"></i>
           <span class="tm">${b.start}–${b.end}</span><span class="who"><b>${esc(b.clientName)}</b><small>${svcLine(b)}</small></span>
           ${b.status !== 'booked' ? `<span class="badge ${b.status}">${LV.status[b.status]}</span>` : ''}</button>`).join('')
@@ -395,7 +449,14 @@
     $('#calBody').scrollLeft = 0;
 
     $$('#calBody [data-bk]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); bookingEditModal(el.dataset.bk, bk.find(b => b.id === el.dataset.bk)); }));
-    const toDay = () => { cal.view = 'day'; calNavAt = Date.now(); $('#calHost').scrollIntoView({ block: 'start', behavior: 'instant' }); return renderCalendar(); }; // kalendārs ekrāna augšā (virs tā ir šodienas kartīte)
+    // kalendārs ekrāna augšā (virs tā ir šodienas kartīte); ritina tikai pēc dienas skata uzzīmēšanas — citādi mēneša režģis pabīdās zem kursora un otrs klikšķis trāpa citā dienā
+    const toDay = async () => {
+      cal.view = 'day'; calNavAt = Date.now();
+      await renderCalendar();
+      if (cal.view !== 'day' || !$('#calHost') || !onSec('parskats')) return;
+      calNavAt = Date.now();
+      $('#calHost').scrollIntoView({ block: 'start', behavior: 'instant' });
+    };
     const openDay = async (d, byKey) => {
       cal.anchor = d;
       if (!calNarrow()) return toDay();      // platā ekrānā — uzreiz dienas skats
@@ -410,7 +471,7 @@
     });
     $('#mOpenDay').addEventListener('click', toDay);
     $('#mNew').addEventListener('click', () => bookingCreateModal({ date: sel }));
-    bindDayOff($('#calBody .month-day'), sel, closures, bk);
+    bindDayOff($('#calBody .month-day'), sel, hours, bk);
   }
 
   /* ----------------------------------------------------------- PIERAKSTU SARAKSTS */

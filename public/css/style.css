@@ -916,11 +916,16 @@ body.lb-open .wa-fab { display: none; }
 .today-card { margin-bottom: 22px; }
 .today-card .agenda { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
 .today-card .agenda .empty { grid-column: 1 / -1; padding: 18px 0 8px; }
+.today-card .agenda { max-height: none; overflow: visible; padding-right: 0; } /* saraksts aug līdzi saturam — bez iekšējas ritināšanas */
+.today-card.busy .agenda { opacity: .55; pointer-events: none; }
+.today-card .empty .btn { margin-top: 10px; }
 .today-card .agenda-item { cursor: pointer; }
+.today-card .agenda-item b { white-space: normal; overflow-wrap: anywhere; }
+.today-card .agenda-item div > span { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .today-card .agenda-item.past { opacity: .62; }
 .today-card .agenda-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #calHost { scroll-margin-top: 16px; }
-@media (max-width: 720px) { .today-card { margin-bottom: 18px; } .today-card .agenda { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .today-card { margin-bottom: 18px; } .today-card .agenda { grid-template-columns: 1fr; } .today-card .badge.booked { display: none; } }
 
 /* Kalendāra darbības zem kalendāra: pieraksts (telefonā) un brīvdienas poga */
 .only-narrow { display: none; }
@@ -934,10 +939,17 @@ body.lb-open .wa-fab { display: none; }
 .dayoff.on > svg { color: var(--accent); }
 .month-day .dayoff { margin-top: 14px; }
 .month-day .dayoff:not(.on) { padding-top: 12px; border-top: 1px dashed var(--line-2); }
-.dayoff-chip { gap: 6px; }
-.dayoff-chip svg { width: 14px; height: 14px; }
+.dayoff-chip { gap: 6px; height: auto; min-height: 32px; padding: 6px 12px; border-radius: 16px; line-height: 1.25; min-width: 0; max-width: 58%; flex: 0 1 auto; }
+.dayoff-chip svg { width: 14px; height: 14px; flex: none; }
+.dayoff-chip > span { min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.today-card .card-head > div:first-child { flex: none; }
+.dayoff-top { display: flex; align-items: flex-start; gap: 7px; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--accent); }
+.dayoff-top svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.dayoff-top span { min-width: 0; overflow-wrap: anywhere; }
+.dayoff .btn:disabled { opacity: .6; }
 @media (max-width: 960px) {
   .home-new { display: none; }
   .only-narrow { display: inline-flex; }
   .dayoff .btn { flex: none; }
+  .mcell.closed.sel { background: repeating-linear-gradient(135deg, rgba(46, 58, 47, .09) 0 8px, rgba(107, 127, 91, .16) 8px 16px); }
 }
