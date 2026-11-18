@@ -953,3 +953,6 @@ body.lb-open .wa-fab { display: none; }
   .dayoff .btn { flex: none; }
   .mcell.closed.sel { background: repeating-linear-gradient(135deg, rgba(46, 58, 47, .09) 0 8px, rgba(107, 127, 91, .16) 8px 16px); }
 }
+
+/* Ritināšana logā nepāriet uz lapu aiz tā */
+.modal-wrap, .modal, .modal-body { overscroll-behavior: contain; }

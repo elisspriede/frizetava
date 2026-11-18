@@ -5,8 +5,9 @@ const API = {
   async req(method, url, body) {
     const opt = { method, credentials: 'same-origin', headers: {} };
     if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
-    let r;
-    try { r = await fetch(url, opt); } catch { throw new Error('Nav savienojuma ar serveri.'); }
+    let r, timer;
+    if (method === 'GET' && typeof AbortController === 'function') { const ctl = new AbortController(); opt.signal = ctl.signal; timer = setTimeout(() => ctl.abort(), 20000); }
+    try { r = await fetch(url, opt); } catch { throw new Error('Nav savienojuma ar serveri.'); } finally { clearTimeout(timer); }
     let data = null;
     try { data = await r.json(); } catch { /* tukšs */ }
     if (!r.ok) {
@@ -136,16 +137,19 @@ function openModal({ title, subtitle = '', body = '', foot = '', wide = false, o
     <div class="modal-head"><div><h3>${esc(title)}</h3>${subtitle ? `<p class="muted small" style="margin-top:4px">${subtitle}</p>` : ''}</div>
     <button class="icon-btn" data-close aria-label="Aizvērt">${icon('x')}</button></div>
     <div class="modal-body">${body}</div>${foot ? `<div class="modal-foot">${foot}</div>` : ''}</div>`;
-  const prevFocus = document.activeElement;
+  const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && !!(r.width || r.height); };
+  const prevFocus = document.activeElement, opener = prevFocus && prevFocus !== document.body && prevFocus.focus ? prevFocus : null;
+  const openerSeen = !!opener && inView(opener), sx = scrollX, sy = scrollY;
   const close = () => {
     wrap.classList.add('out');
     document.removeEventListener('keydown', onKey);
     setTimeout(() => {
       wrap.remove();
-      // fokuss atgriežas tikai uz elementu, kas ir redzams ekrānā — citādi pārlūks aizritinātu lapu uz iepriekš lietoto lauku
-      if (!prevFocus || !prevFocus.focus || !document.contains(prevFocus)) return;
-      const r = prevFocus.getBoundingClientRect();
-      if (r.bottom > 0 && r.top < innerHeight && (r.width || r.height)) prevFocus.focus({ preventScroll: true });
+      if (!opener || !document.contains(opener)) return;
+      // lapa aiz loga pa to laiku paritināta (atvērējs vairs nav ekrānā) — atgriežas vietā, kur logs tika atvērts
+      if (openerSeen && !inView(opener) && !$('.modal-wrap')) window.scrollTo({ left: sx, top: sy, behavior: 'instant' });
+      // fokuss atgriežas tikai uz ekrānā redzamu elementu — citādi pārlūks aizritinātu lapu uz iepriekš lietoto lauku
+      if (inView(opener)) opener.focus({ preventScroll: true });
       else if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     }, 180);
   };

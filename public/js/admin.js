@@ -54,7 +54,10 @@
   let schedSeq = 0, schedP = null;
   function fetchSchedule() {
     const q = ++schedSeq;
-    const p = API.get('/api/admin/schedule').then(x => { if (q === schedSeq) schedule = x; }).finally(() => { if (schedP === p) schedP = null; });
+    const p = API.get('/api/admin/schedule').then(x => {
+      if (!x || !x.hours || !Array.isArray(x.closures)) throw new Error('Radās kļūda.');
+      if (q === schedSeq) schedule = x;
+    }).finally(() => { if (schedP === p) schedP = null; });
     return (schedP = p);
   }
   async function ensureSchedule(force) {
@@ -98,7 +101,7 @@
       const r = $('#calTitle') && $('#calTitle').getBoundingClientRect();
       bookingCreateModal({ date: r && r.top >= 0 && r.bottom <= innerHeight ? calNewDate() : undefined });
     });
-    schedule = null;
+    schedule = null; schedP = null; // katra sākuma atvēršana sāk savu pieprasījumu; novēlojusies vecā atbilde tiek atmesta
     // kalendārs kļūst lietojams, kad kartītei virs tā ir galīgais augstums — citādi tas palec zem pirksta
     const host = $('#calHost');
     host.style.visibility = 'hidden'; host.inert = true;
@@ -143,7 +146,7 @@
     $('#todayCard').classList.remove('busy');
     if (focusId && !$('.modal-wrap')) { const el = $$('#todayCard [data-bk]').find(x => x.dataset.bk === focusId); if (el) el.focus({ preventScroll: true }); }
     $$('#todayCard [data-bk]').forEach(el => {
-      const open = () => { if (seq === todaySeq) bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk)); };
+      const open = () => { if (!$('#todayCard').classList.contains('busy')) bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk)); };
       el.addEventListener('click', open);
       el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
     });
@@ -344,7 +347,10 @@
     try {
       await ensureSchedule();
       bk = (await API.get(`/api/admin/bookings?from=${from}&to=${to}`)).bookings.filter(b => b.status !== 'cancelled');
-    } catch (e) { return toast(e.message, 'error'); }
+    } catch (e) {
+      if (seq === calSeq) $$('#calHost [data-dayoff]').forEach(x => { x.disabled = false; });
+      return toast(e.message, 'error');
+    }
     if (seq !== calSeq || !$('#calBody') || !onSec('parskats')) return; // pa to laiku izvēlēts cits datums/skats vai atvērta cita sadaļa
     const hours = schedule.hours, closures = new Map(schedule.closures.map(c => [c.date, c]));
     drawCalActions(hours, closures, bk);
