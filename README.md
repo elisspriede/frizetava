@@ -43,8 +43,9 @@ Pēc pieslēgšanās sistēma pati novirza: administrators → `/admin`, klients
 
 ## Administratora panelis
 
-- **Pārskats** — ieņēmumi, vizītes, jauni klienti, noslodze; ieņēmumu līkne, populārākie pakalpojumi, noslogotākās dienas un stundas, lojālākie klienti, šodienas vizītes. Atgādinājums par neatzīmētām pagātnes vizītēm.
-- **Kalendārs** — nedēļas/dienas skats; klikšķis uz brīva laika izveido pierakstu, klikšķis uz pieraksta — rediģē (statuss, laiks, pakalpojums, cena, piezīmes).
+- **Sākums** — šodienas pieraksti un zem tiem kalendārs (diena / nedēļa / mēnesis).
+- **Statistika** — ieņēmumi, vizītes, jauni klienti, noslodze; ieņēmumu līkne, populārākie pakalpojumi, noslogotākās dienas un stundas, lojālākie klienti.
+  Kalendārā: klikšķis uz brīva laika izveido pierakstu, klikšķis uz pieraksta — rediģē (statuss, laiks, pakalpojums, cena, piezīmes).
 - **Pieraksti** — saraksts ar filtriem un CSV eksportu (atveras Excel).
 - **Klienti** — klientu bāze, jauna klienta izveide ar lietotājvārdu un paroli (ģenerē automātiski), paroles atjaunošana, bloķēšana, piezīmes, vizīšu vēsture.
 - **Pakalpojumi** — cenrādis: nosaukums, apraksts, ilgums, cena, krāsa, redzamība.

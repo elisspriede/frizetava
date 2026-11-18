@@ -911,3 +911,13 @@ body.lb-open .wa-fab { display: none; }
 .bk-extra { max-width: 100%; min-width: 0; }
 .bk-extra span { min-width: 0; overflow-wrap: anywhere; }
 .bk-addons select.input { max-width: 100%; }
+
+/* Admin sākums: šodienas pieraksti un zem tiem kalendārs */
+.today-card { margin-bottom: 22px; }
+.today-card .agenda { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.today-card .agenda .empty { grid-column: 1 / -1; padding: 18px 0 8px; }
+.today-card .agenda-item { cursor: pointer; }
+.today-card .agenda-item.past { opacity: .62; }
+.today-card .agenda-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#calHost { scroll-margin-top: 16px; }
+@media (max-width: 720px) { .today-card { margin-bottom: 18px; } .today-card .agenda { grid-template-columns: 1fr; } }

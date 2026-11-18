@@ -1,13 +1,13 @@
 'use strict';
 (async () => {
   const SECTIONS = [
-    ['parskats', 'Pārskats', 'grid', 'Sākums'],
-    ['kalendars', 'Kalendārs', 'calendar', 'Kalend.'],
+    ['parskats', 'Sākums', 'grid', 'Sākums'],
     ['pieraksti', 'Pieraksti', 'list', 'Saraksts'],
     ['klienti', 'Klienti', 'users', 'Klienti'],
     ['pakalpojumi', 'Pakalpojumi', 'tag', 'Cenas'],
     ['galerija', 'Galerija', 'image', 'Darbi'],
     ['darba-laiks', 'Darba laiks', 'clock', 'Grafiks'],
+    ['statistika', 'Statistika', 'activity', 'Statist.'],
     ['iestatijumi', 'Iestatījumi', 'settings', 'Opcijas']
   ];
   const PALETTE = ['#2E3A2F', '#6B7F5B', '#C96F4F', '#B08D63', '#8FA07E', '#A35A3F', '#4F6250', '#C9A98A'];
@@ -52,14 +52,16 @@
   async function ensureClients(force) { if (!clients || force) clients = (await API.get('/api/admin/clients')).clients; return clients; }
   async function ensureSchedule(force) { if (!schedule || force) schedule = await API.get('/api/admin/schedule'); return schedule; }
 
+  // vecā saite #kalendars ved uz sākumu — kalendārs tagad ir tur
+  const SEC_ALIAS = { kalendars: 'parskats' };
+  const curSec = () => { let h = (location.hash.slice(1) || 'parskats').split('?')[0]; h = SEC_ALIAS[h] || h; return SECTIONS.find(x => x[0] === h) ? h : 'parskats'; };
   // vai joprojām atvērta šī sadaļa (lēni ielādējies saturs nedrīkst pārrakstīt pa to laiku atvērtu citu sadaļu)
-  const onSec = sec => { const h = (location.hash.slice(1) || 'parskats').split('?')[0]; return (SECTIONS.find(x => x[0] === h) ? h : 'parskats') === sec; };
+  const onSec = sec => curSec() === sec;
   function route() {
-    const sec = (location.hash.slice(1) || 'parskats').split('?')[0];
-    const found = SECTIONS.find(s => s[0] === sec) ? sec : 'parskats';
+    const found = curSec();
     $$('[data-sec]').forEach(a => a.classList.toggle('on', a.dataset.sec === found));
     window.scrollTo({ top: 0 });
-    ({ parskats: renderDashboard, kalendars: renderCalendar, pieraksti: renderList, klienti: renderClients, pakalpojumi: renderServices, galerija: renderGallery, 'darba-laiks': renderHours, iestatijumi: renderSettings })[found]();
+    ({ parskats: renderHome, statistika: renderStats, pieraksti: renderList, klienti: renderClients, pakalpojumi: renderServices, galerija: renderGallery, 'darba-laiks': renderHours, iestatijumi: renderSettings })[found]();
   }
   addEventListener('hashchange', route);
 
@@ -68,25 +70,61 @@
   const loading = () => { view.innerHTML = '<div class="skeleton" style="height:60px;margin:20px 0"></div><div class="kpis">' + '<div class="skeleton" style="height:120px"></div>'.repeat(4) + '</div><div class="skeleton" style="height:320px"></div>'; };
   const deltaHTML = d => d == null ? '' : `<span class="delta ${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '↑' : '↓'} ${Math.abs(d)}%</span>`;
 
-  /* ----------------------------------------------------------- PĀRSKATS */
-  async function renderDashboard() {
+  /* ----------------------------------------------------------- SĀKUMS: šodienas pieraksti + kalendārs */
+  function renderHome() {
+    const h = new Date().getHours();
+    const greet = h < 12 ? 'Labrīt' : h < 18 ? 'Labdien' : 'Labvakar';
+    view.innerHTML = pageHead(fmt.dateLong(todayStr()), `${greet}, <span class="serif" style="color:var(--accent)">${esc((me.name || '').split(' ')[0] || 'admin')}</span>`,
+      `<button class="btn btn-accent" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
+      `<div id="homeNotices"></div>
+       <section class="glass card today-card" id="todayCard" aria-live="polite"><div class="card-head"><div><h3>Šodien</h3></div></div><div class="skeleton" style="height:76px"></div></section>
+       <div id="calHost"></div>`;
+    $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' || (cal.view === 'month' && calNarrow()) ? cal.anchor : undefined }));
+    loadToday();
+    return renderCalendar();
+  }
+  // šodienas vizītes un atgādinājumi (parole, neatzīmētas vizītes)
+  let todaySeq = 0;
+  async function loadToday() {
+    const seq = ++todaySeq;
+    let s;
+    try { s = await API.get('/api/admin/stats?range=7'); } catch (e) { return toast(e.message, 'error'); }
+    if (seq !== todaySeq || !onSec('parskats') || !$('#todayCard')) return;
+    const notices = [];
+    if (me.mustChangePassword) notices.push(`<div class="notice">${icon('key')}<span>Tu izmanto noklusējuma administratora paroli. Lūdzu, nomaini to drošības nolūkos.</span><a class="btn btn-sm" href="#iestatijumi">Mainīt</a></div>`);
+    if (s.kpi.unmarked) notices.push(`<div class="notice">${icon('alert')}<span><b>${s.kpi.unmarked}</b> pagājušas vizītes vēl nav atzīmētas kā notikušas.</span><button class="btn btn-sm" id="markPast">Atzīmēt kā notikušas</button></div>`);
+    $('#homeNotices').innerHTML = notices.join('');
+    const now = new Date().getHours() * 60 + new Date().getMinutes();
+    $('#todayCard').innerHTML = `
+      <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${s.today.length} ${s.today.length % 10 === 1 && s.today.length % 100 !== 11 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div></div>
+      <div class="agenda">${s.today.length ? s.today.map(b => `
+        <div class="agenda-item ${toMin(b.end) < now ? 'past' : ''}" data-bk="${b.id}" role="button" tabindex="0">
+          <div class="t">${b.start}<small>${b.end}</small></div><i class="bar" style="background:${esc(b.color)}"></i>
+          <div style="min-width:0"><b>${esc(b.clientName)}</b><span>${svcLine(b)}</span></div>
+          <span class="badge ${b.status}">${LV.status[b.status]}</span></div>`).join('')
+        : `<div class="empty">${icon('leaf')}<p>Šodien vizīšu nav.<br>Laiks atpūtai!</p></div>`}</div>`;
+    $$('#todayCard [data-bk]').forEach(el => {
+      const open = () => bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk));
+      el.addEventListener('click', open);
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    if ($('#markPast')) $('#markPast').addEventListener('click', e => withBusy(e.currentTarget, async () => {
+      try { const r = await API.post('/api/admin/bookings/mark-past'); toast(`Atzīmētas ${r.updated} vizītes.`); } catch (x) { toast(x.message, 'error'); }
+      loadToday(); renderCalendar();
+    }));
+  }
+
+  /* ----------------------------------------------------------- STATISTIKA */
+  async function renderStats() {
     loading();
     let s;
     try { s = await API.get('/api/admin/stats?range=' + dashRange); } catch (e) { return toast(e.message, 'error'); }
-    if (!onSec('parskats')) return;
+    if (!onSec('statistika')) return;
     const k = s.kpi;
-    const h = new Date().getHours();
-    const greet = h < 12 ? 'Labrīt' : h < 18 ? 'Labdien' : 'Labvakar';
-    const notices = [];
-    if (me.mustChangePassword) notices.push(`<div class="notice">${icon('key')}<span>Tu izmanto noklusējuma administratora paroli. Lūdzu, nomaini to drošības nolūkos.</span><a class="btn btn-sm" href="#iestatijumi">Mainīt</a></div>`);
-    if (k.unmarked) notices.push(`<div class="notice">${icon('alert')}<span><b>${k.unmarked}</b> pagājušas vizītes vēl nav atzīmētas kā notikušas.</span><button class="btn btn-sm" id="markPast">Atzīmēt kā notikušas</button></div>`);
     const rangeLbl = { 7: '7 dienās', 30: '30 dienās', 90: '90 dienās' }[dashRange];
-    const now = new Date().getHours() * 60 + new Date().getMinutes();
 
-    view.innerHTML = pageHead(fmt.dateLong(todayStr()), `${greet}, <span class="serif" style="color:var(--accent)">${esc((me.name || '').split(' ')[0] || 'admin')}</span>`,
-      `<div class="seg" id="rangeSeg">${[7, 30, 90].map(r => `<button data-r="${r}" class="${r === dashRange ? 'on' : ''}">${r} d.</button>`).join('')}</div>
-       <button class="btn btn-accent" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
-      notices.join('') +
+    view.innerHTML = pageHead('Skaitļi un tendences', 'Statistika',
+      `<div class="seg" id="rangeSeg">${[7, 30, 90].map(r => `<button data-r="${r}" class="${r === dashRange ? 'on' : ''}">${r} d.</button>`).join('')}</div>`) +
       `<div class="kpis">
         <div class="glass kpi dark"><div class="k">${icon('euro')}Ieņēmumi ${rangeLbl}</div><div class="v">${fmt.money(k.revenue)}</div>
           <div class="d">${deltaHTML(k.revenueDelta)} pret iepriekšējo periodu</div>
@@ -100,20 +138,10 @@
           <div class="d">${k.upcomingCount} pieraksti · ${fmt.money(k.upcomingRevenue)} gaidāmi</div></div>
       </div>
       <div class="dash-grid">
-        <section class="glass card span-8">
+        <section class="glass card span-12">
           <div class="card-head"><div><h3>${dashMetric === 'revenue' ? 'Ieņēmumi' : 'Vizītes'}</h3><p class="muted small">${fmt.dateShort(s.from)} – ${fmt.dateShort(s.to)}</p></div>
             <div class="seg" id="metricSeg"><button data-m="revenue" class="${dashMetric === 'revenue' ? 'on' : ''}">Ieņēmumi</button><button data-m="count" class="${dashMetric === 'count' ? 'on' : ''}">Vizītes</button></div></div>
           <div class="chart" id="areaChart"></div>
-        </section>
-        <section class="glass card span-4">
-          <div class="card-head"><div><h3>Šodien</h3><p class="muted small">${s.today.length} ${s.today.length === 1 ? 'vizīte' : 'vizītes'} · ${fmt.money(s.today.filter(b => b.status !== 'noshow').reduce((a, b) => a + b.price, 0))}</p></div>
-            <a class="btn btn-sm btn-line" href="#kalendars">Kalendārs</a></div>
-          <div class="agenda">${s.today.length ? s.today.map(b => `
-            <div class="agenda-item ${toMin(b.end) < now ? 'past' : ''}" data-bk="${b.id}">
-              <div class="t">${b.start}<small>${b.end}</small></div><i class="bar" style="background:${esc(b.color)}"></i>
-              <div style="min-width:0"><b>${esc(b.clientName)}</b><span>${svcLine(b)}</span></div>
-              <span class="badge ${b.status}">${LV.status[b.status]}</span></div>`).join('')
-            : `<div class="empty">${icon('leaf')}<p>Šodien vizīšu nav.<br>Laiks atpūtai!</p></div>`}</div>
         </section>
         <section class="glass card span-5">
           <div class="card-head"><h3>Populārākie pakalpojumi</h3><span class="muted small">${rangeLbl}</span></div>
@@ -157,13 +185,8 @@
     const hrs = []; for (let i = 8; i <= 19; i++) hrs.push(pad(i));
     Charts.bars($('#hrChart'), { labels: hrs.map(x => String(+x)), values: hrs.map(x => s.hours[x] || 0), height: 170, color: '#2E3A2F', highlight: '#C96F4F' });
 
-    $$('#rangeSeg button').forEach(b => b.addEventListener('click', () => { dashRange = +b.dataset.r; renderDashboard(); }));
-    $$('#metricSeg button').forEach(b => b.addEventListener('click', () => { dashMetric = b.dataset.m; renderDashboard(); }));
-    $('#newBk').addEventListener('click', () => bookingCreateModal({}));
-    $$('[data-bk]').forEach(el => el.addEventListener('click', () => bookingEditModal(el.dataset.bk, s.today.find(b => b.id === el.dataset.bk))));
-    if ($('#markPast')) $('#markPast').addEventListener('click', e => withBusy(e.currentTarget, async () => {
-      const r = await API.post('/api/admin/bookings/mark-past'); toast(`Atzīmētas ${r.updated} vizītes.`); renderDashboard();
-    }));
+    $$('#rangeSeg button').forEach(b => b.addEventListener('click', () => { dashRange = +b.dataset.r; renderStats(); }));
+    $$('#metricSeg button').forEach(b => b.addEventListener('click', () => { dashMetric = b.dataset.m; renderStats(); }));
   }
 
   /* ----------------------------------------------------------- KALENDĀRS */
@@ -204,8 +227,8 @@
       ? `${parseD(from).getDate()}. ${from.slice(5, 7) !== to.slice(5, 7) ? LV.monthsShort[parseD(from).getMonth()] + ' ' : ''}– ${parseD(to).getDate()}. ${LV.months[parseD(to).getMonth()]}`
       : fmt.dateLong(from);
     if (!$('#calWrap')) {
-      view.innerHTML = pageHead('Kalendārs', 'Pieraksti', `<button class="btn btn-accent" id="newBk">${icon('plus')}Jauns pieraksts</button>`) +
-        `<div class="week-toolbar"><button class="icon-btn" id="prev" aria-label="Iepriekš">${icon('chevL')}</button><button class="icon-btn" id="next" aria-label="Tālāk">${icon('chevR')}</button>
+      if (!$('#calHost')) return; // kalendārs dzīvo sākumlapā
+      $('#calHost').innerHTML = `<div class="week-toolbar"><button class="icon-btn" id="prev" aria-label="Iepriekš">${icon('chevL')}</button><button class="icon-btn" id="next" aria-label="Tālāk">${icon('chevR')}</button>
           <button class="btn btn-sm btn-ghost" id="todayBtn">Šodien</button><span class="title" id="calTitle"></span>
           <input type="date" class="input" id="jump" aria-label="Pāriet uz datumu">
           <div class="seg"><button data-v="day">Diena</button><button data-v="week">Nedēļa</button><button data-v="month">Mēnesis</button></div></div>
@@ -216,7 +239,6 @@
       $('#todayBtn').addEventListener('click', () => { cal.anchor = todayStr(); renderCalendar(); });
       $('#jump').addEventListener('change', e => { if (e.target.value) { cal.anchor = e.target.value; renderCalendar(); } });
       $$('.week-toolbar .seg button').forEach(b => b.addEventListener('click', () => { cal.view = b.dataset.v; renderCalendar(); }));
-      $('#newBk').addEventListener('click', () => bookingCreateModal({ date: cal.view === 'day' || (cal.view === 'month' && calNarrow()) ? cal.anchor : undefined }));
     }
     $('#calTitle').textContent = title;
     $('#calTitle').title = title;
@@ -230,7 +252,7 @@
       await ensureSchedule();
       bk = (await API.get(`/api/admin/bookings?from=${from}&to=${to}`)).bookings.filter(b => b.status !== 'cancelled');
     } catch (e) { return toast(e.message, 'error'); }
-    if (seq !== calSeq || !$('#calBody') || !onSec('kalendars')) return; // pa to laiku izvēlēts cits datums/skats vai atvērta cita sadaļa
+    if (seq !== calSeq || !$('#calBody') || !onSec('parskats')) return; // pa to laiku izvēlēts cits datums/skats vai atvērta cita sadaļa
     const hours = schedule.hours, closures = new Map(schedule.closures.map(c => [c.date, c]));
     if (cal.view === 'month') return renderMonth(days, bk, hours, closures);
     let minS = 24 * 60, maxE = 0;
@@ -332,7 +354,7 @@
     $('#calBody').scrollLeft = 0;
 
     $$('#calBody [data-bk]').forEach(el => el.addEventListener('click', e => { e.stopPropagation(); bookingEditModal(el.dataset.bk, bk.find(b => b.id === el.dataset.bk)); }));
-    const toDay = () => { cal.view = 'day'; calNavAt = Date.now(); window.scrollTo({ top: 0, behavior: 'instant' }); return renderCalendar(); };
+    const toDay = () => { cal.view = 'day'; calNavAt = Date.now(); $('#calHost').scrollIntoView({ block: 'start', behavior: 'instant' }); return renderCalendar(); }; // kalendārs ekrāna augšā (virs tā ir šodienas kartīte)
     const openDay = async (d, byKey) => {
       cal.anchor = d;
       if (!calNarrow()) return toDay();      // platā ekrānā — uzreiz dienas skats
@@ -391,10 +413,10 @@
 
   /* ----------------------------------------------------------- PIERAKSTA MODĀĻI */
   const refreshCurrent = () => {
-    if (location.hash === '#kalendars') { renderCalendar(); }
+    if (onSec('parskats')) { loadToday(); renderCalendar(); }
     else if (location.hash === '#pieraksti') loadList();
     else if (location.hash === '#klienti') { clients = null; renderClients(); }
-    else if (location.hash === '' || location.hash === '#parskats') renderDashboard();
+    else if (onSec('statistika')) renderStats();
   };
 
   // „Pakalpojums · Variants + Ekstras” (droši ievietojams HTML)
